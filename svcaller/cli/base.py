@@ -5,6 +5,8 @@ import pdb
 import sys
 
 from .call import call as call_cmd
+from .call import event_filter as event_filter_cmd
+from .call import cluster_filter as cluster_filter_cmd
 
 
 @click.group()
@@ -29,3 +31,5 @@ def setup_logging(loglevel="INFO"):
 
 
 base.add_command(call_cmd)
+base.add_command(event_filter_cmd)
+base.add_command(cluster_filter_cmd)

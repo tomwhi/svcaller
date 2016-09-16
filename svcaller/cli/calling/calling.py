@@ -8,46 +8,80 @@ INV = "INV"
 TRA = "TRA"
 DUP = "DUP"
 
-def call_event(input_bam, output_name, event_type):
-    samfile = pysam.AlignmentFile(input_bam, "rb")
-    if event_type == DEL:
-        event_filtered_reads = del_filter(samfile)
-    elif event_type == INV:
-        event_filtered_reads = inv_filter(samfile)
-    elif event_type == TRA:
-        event_filtered_reads = tra_filter(samfile)
-    elif event_type == DUP:
-        event_filtered_reads = dup_filter(samfile)
-    else:
-        logging.error("Invalid event_type: " + event_type)
 
-    cluster_filtered_reads = cluster_filter(event_filtered_reads, samfile)
-    pdb.set_trace()
-    with pysam.AlignmentFile(output_name + ".bam", "wb", header=samfile.header) as outf:
-        for read in cluster_filtered_reads:
-            outf.write(read)
-    #XXX = call_events(second_filtered_bam)
-    #XXX = check_softclipping(second_filtered_bam)
-    #generate_outputs(XXX, XXX)
+#def call_event(input_bam, output_name, event_type):
+#
+#    cluster_filtered_reads = cluster_filter(event_filtered_reads, samfile)
+#    pdb.set_trace()
+#    #XXX = call_events(second_filtered_bam)
+#    #XXX = check_softclipping(second_filtered_bam)
+#    #generate_outputs(XXX, XXX)
 
 
-def del_filter(samfile):
+def event_filt(read_iter, event_type, flag_filter=256+1024+2048):
     filtered_reads = []
-    for read in samfile:
-        # Select reads facing each other, on the same chromosome, with a gap
-        # larger than the specified distance threshold:
-        if (read.rname == read.rnext):
-            if not(read.flag & 16) and (read.flag & 32):
-                if read.tlen > 1000:
-                    filtered_reads.append(read)
-            elif (read.flag & 16) and not(read.flag & 32):
-                if read.tlen < -1000:
-                    filtered_reads.append(read)
+    for read in read_iter:
+        if not read.flag & flag_filter:
+            # This read passes the general bit-wise filter.
+            # Apply the event-specific bit-wise flag field and other field
+            # filters:
+            if event_type == DEL:
+                del_filt(filtered_reads, read)
+            elif event_type == INV:
+                inv_filt(filtered_reads, read)
+            elif event_type == TRA:
+                tra_filt(filtered_reads, read)
+            elif event_type == DUP:
+                dup_filt(filtered_reads, read)
+            else:
+                logging.error("Invalid event_type: " + event_type)
+
+#        if read.qname == "HISEQ:226:HK2GCBCXX:2:2216:5917:85768":
+#            pdb.set_trace()
+#            dummy = 1
 
     return filtered_reads
 
 
-def cluster_filter(input_reads, samfile, chrom_of_interest=22):
+def del_filt(filtered_reads, read):
+    # Select reads facing each other, on the same chromosome, with a gap
+    # larger than the specified distance threshold:
+    if (read.rname == read.rnext):
+        if not(read.flag & 16) and (read.flag & 32):
+            if read.tlen > 1000:
+                filtered_reads.append(read)
+        elif (read.flag & 16) and not(read.flag & 32):
+            if read.tlen < -1000:
+                filtered_reads.append(read)
+
+
+def dup_filt(filtered_reads, read):
+    # Select reads facing away from each other, on the same chromosome:
+    if (read.rname == read.rnext):
+        if not(read.flag & 16) and (read.flag & 32):
+            if read.tlen < 0:
+                filtered_reads.append(read)
+        elif (read.flag & 16) and not(read.flag & 32):
+            if read.tlen > 0:
+                filtered_reads.append(read)
+
+
+def inv_filt(filtered_reads, read):
+    # Select reads facing in the same direction, on the same chromosome:
+    if (read.rname == read.rnext):
+        if not(read.flag & 16) and not(read.flag & 32):
+            filtered_reads.append(read)
+        elif (read.flag & 16) and (read.flag & 32):
+            filtered_reads.append(read)
+
+
+def tra_filt(filtered_reads, read):
+    # Select reads facing in the same direction, on the same chromosome:
+    if (read.rname != read.rnext):
+        filtered_reads.append(read)
+
+
+def clust_filt(read_iter, samfile, chrom_of_interest=22):
     '''Filter the input reads to only retain those read-pairs where there are other read-pairs with
     similar coordinates. This is an ugly implementation, needs refactoring.
 
@@ -55,7 +89,7 @@ def cluster_filter(input_reads, samfile, chrom_of_interest=22):
     more reads than the other chromosomes.'''
     idx = 0
     filtered_reads = []
-    for read in input_reads:
+    for read in read_iter:
         half_read_len = int((len(read.seq)/2.0))
 
         # Determine which of the reads (for this read-pair) will be used to identify
@@ -107,31 +141,11 @@ def cluster_filter(input_reads, samfile, chrom_of_interest=22):
                 filtered_reads.append(read)
 
         except Exception, e:
-            print >> sys.stderr, e
+            #print >> sys.stderr, e
             pass
 
-        if idx % 10 == 0:
+        if idx % 1000 == 0:
             print >> sys.stderr, idx
         idx += 1
 
     return filtered_reads
-
-
-comment = '''
-import pdb, sys
-import pysam
-
-samfile = pysam.AlignmentFile(sys.argv[1], "rb")
-
-allReads = list(samfile)
-filteredReads = []
-
-
-outFile = open("dummy.sam", 'w')
-outSam = pysam.AlignmentFile(outFile, "w", template=samfile)
-out2 = open(sys.argv[2] + ".sam", 'w')
-for read in filteredReads:
-  print >> out2, read.tostring(outSam)
-
-out2.close()
-'''
