@@ -1,5 +1,5 @@
 import logging
-import os
+import os, pdb
 
 import click
 import pysam
@@ -18,16 +18,13 @@ def call(ctx, event_type, output_name, input_bam):
 
     logging.info("Applying event-specific filter...")
     event_filt_reads_bam_name = output_name + "_filt1.bam"
-    event_filt_cmd(event_type, event_filt_reads_bam_name, input_bam)
+    event_filter_cmd(event_type, event_filt_reads_bam_name, input_bam)
+    pysam.index(str(event_filt_reads_bam_name))
 
     logging.info("Applying read-cluster filter...")
     clust_filt_reads_bam_name = output_name + "_filt2.bam"
-    cluster_filt_cmd(clust_filt_reads_bam_name, event_filt_reads_bam_name)
-
-    logging.info("Writing output...")
-    with pysam.AlignmentFile(output_name + "_filtered_reads.bam", "wb", header=samfile.header) as outf:
-        for read in cluster_filtered_reads:
-            outf.write(read)
+    cluster_filter_cmd(clust_filt_reads_bam_name, event_filt_reads_bam_name)
+    pysam.index(str(clust_filt_reads_bam_name))
 
     #call_event(input_bam, output_name, event_type)
 
@@ -41,7 +38,7 @@ def event_filter(ctx, event_type, output_bam, input_bam):
     event_filt_cmd(event_type, output_bam, input_bam)
 
 
-def event_filt_cmd(event_type, output_bam, input_bam):
+def event_filter_cmd(event_type, output_bam, input_bam):
     logging.info("Running event filter: {}".format(event_type))
 
     samfile = pysam.AlignmentFile(input_bam, "rb")
@@ -65,7 +62,7 @@ def cluster_filter_cmd(output_bam, input_bam):
 
     samfile = pysam.AlignmentFile(input_bam, "rb")
     reads = [r for r in list(samfile)]
-    cluster_filtered_reads = clust_filt(reads, samfile, output_name)
+    cluster_filtered_reads = clust_filt(reads, samfile)
     with pysam.AlignmentFile(output_bam, "wb", header=samfile.header) as outf:
         for read in cluster_filtered_reads:
             outf.write(read)
