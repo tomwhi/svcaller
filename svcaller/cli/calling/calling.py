@@ -155,7 +155,60 @@ def clust_filt(read_iter, samfile, chrom_of_interest=22):
             print >> sys.stderr, idx
         idx += 1
 
-    return filtered_reads
+    # Finally, filter to only retain reads where both reads in the pair are
+    # included in this list:
+    return paired_filt(filtered_reads)
+
+
+def paired_filt(reads):
+    '''Filter the specified reads, to only retain those where both read-pairs are present
+    in the input list.'''
+
+    readname2reads = get_readname2reads(reads)
+    return filter(lambda read: len(readname2reads[read.qname]) == 2, reads)
+
+
+def get_readname2reads(reads):
+    readname2reads = {}
+    for read in reads:
+        if not readname2reads.has_key(read.qname):
+            readname2reads[read.qname] = []
+        readname2reads[read.qname].append(read)
+
+    return readname2reads
+
+
+def pair_clusters(clusters):
+    '''Pair clusters with each other: O(N)'''
+
+    # NOTE: Currently, performing multiple passes over the reads, since that
+    # way I can just take the set of clusters as input. Probably won't change
+    # this, as this step should not be a time bottleneck anyway.
+
+    # FIXME: A bunch of hacky code to get the data structures required for
+    # efficient processing of this data. Could be error-prone / hard to read:
+    reads = []
+    for cluster in clusters:
+        reads = reads + list(cluster.get_reads())
+
+    read2cluster = {}
+    for cluster in clusters:
+        for read in list(cluster.get_reads()):
+            read2cluster[read] = cluster
+
+    readname2reads = get_readname2reads(reads)
+
+    read2mate = {}
+    for read in reads:
+        all_reads_with_this_name = readname2reads[read.qname]
+        other_reads = filter(lambda curr_read: curr_read != read, all_reads_with_this_name)
+        if not len(other_reads) == 1:
+            pdb.set_trace()
+            dummy = 1
+        read2mate[read] = other_reads[0]
+
+    pdb.set_trace()
+    dummy = 1
 
 
 def call_events(filtered_reads):
@@ -181,6 +234,9 @@ class ReadCluster:
 
     def add_read(self, read):
         self._reads.add(read)
+
+    def get_reads(self):
+        return self._reads
 
     def to_string(self):
         read_list = list(self._reads)
