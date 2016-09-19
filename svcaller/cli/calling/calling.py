@@ -149,3 +149,100 @@ def clust_filt(read_iter, samfile, chrom_of_interest=22):
         idx += 1
 
     return filtered_reads
+
+
+def call_events(filtered_reads):
+    '''Call events on the input reads. The reads must be sorted by chromosome
+    and then by position.'''
+
+    # Detect overlapping read clusters...
+    #(cluster2reads, read2cluster) =
+    detect_clusters(filtered_reads)
+
+    # Pair up the clusters:
+    # XXX POSSIBLY OUT FILTER CLUSTERS WITH AMBIGUOUS PAIRINGS
+
+
+class ReadCluster:
+    def __init__(self):
+        self._reads = set()
+
+    def add_read(self, read):
+        self._reads.add(read)
+
+    def to_string(self):
+        read_list = list(self._reads)
+        first_read_chrom = read_list[0].rname
+
+        # TEMPORARY SANITY CHECK - implementing quickly now and will write a suite
+        # of unit tests later when time abides:
+        for read in read_list:
+            assert read.rname == first_read_chrom
+
+        first_read_start = min(map(lambda read: read.pos, read_list))
+
+        # NOTE: Using qlen as the length of the read for the purpose of determining
+        # cluster overlaps. I suspect this will perform adequately, but may need to
+        # adjust it to instead use matching sequence length instead at some point:
+        last_read_end = max(map(lambda read: read.pos+read.qlen, read_list))
+
+        return "%d\t%d\t%d" % (first_read_chrom, first_read_start, last_read_end)
+
+
+def detect_clusters(reads):
+    clusters = set()
+    read2cluster = {}
+
+    prev_read_chrom = None
+    prev_read_end_pos = 0
+    for read in reads:
+        # Detect if the read is on a different chromosome, or if it does not
+        # overlap the previous read
+        if read.rname != prev_read_chrom or read.pos > prev_read_end_pos:
+            # Start a new cluster:
+            curr_cluster = ReadCluster()
+            clusters.add(curr_cluster)
+
+        # Add the read to the current cluster:
+        curr_cluster.add_read(read)
+
+        prev_read_chrom = read.rname
+        prev_read_end_pos = read.pos + read.tlen
+
+    # TMP: PRINTING CLUSTERS TO A BED FILE:
+    for cluster in list(clusters):
+        print cluster.to_string()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

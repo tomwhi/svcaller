@@ -4,9 +4,10 @@ import os
 import pdb
 import sys
 
-from .call import call as call_cmd
-from .call import event_filter as event_filter_cmd
-from .call import cluster_filter as cluster_filter_cmd
+from .call import run_all_cmd as run_all
+from .call import event_filter_cmd as event_filter
+from .call import cluster_filter_cmd as cluster_filter
+from .call import call_events_cmd as call
 
 
 @click.group()
@@ -30,6 +31,7 @@ def setup_logging(loglevel="INFO"):
     logging.debug("Started log with loglevel %(loglevel)s" % {"loglevel": loglevel})
 
 
-base.add_command(call_cmd)
-base.add_command(event_filter_cmd)
-base.add_command(cluster_filter_cmd)
+base.add_command(run_all)
+base.add_command(event_filter)
+base.add_command(cluster_filter)
+base.add_command(call)
