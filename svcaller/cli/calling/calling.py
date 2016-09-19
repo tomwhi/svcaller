@@ -202,10 +202,13 @@ def pair_clusters(clusters):
     for read in reads:
         all_reads_with_this_name = readname2reads[read.qname]
         other_reads = filter(lambda curr_read: curr_read != read, all_reads_with_this_name)
-        if not len(other_reads) == 1:
-            pdb.set_trace()
-            dummy = 1
+        assert len(other_reads) == 1
         read2mate[read] = other_reads[0]
+
+    # Update each cluster, to indicate a pairing to each other cluster that the mate-pair
+    # belongs to, for all mate-pairs of reads in this cluster (hope that makes sense!):
+    for cluster in clusters:
+        cluster.set_pairings(read2mate, read2cluster)
 
     pdb.set_trace()
     dummy = 1
@@ -227,16 +230,25 @@ def call_events(filtered_reads):
         print cluster.to_string()
 
 
-
 class ReadCluster:
     def __init__(self):
         self._reads = set()
+        self._paired_clusters = set()
 
     def add_read(self, read):
         self._reads.add(read)
 
     def get_reads(self):
         return self._reads
+
+    def set_pairings(self, read2mate, read2cluster):
+        '''Record all cluster pairings for this cluster.'''
+
+        for read in self._reads:
+            mate = read2mate[read]
+            mate_cluster = read2cluster[mate]
+            self._paired_clusters.add(mate_cluster)
+
 
     def to_string(self):
         read_list = list(self._reads)
