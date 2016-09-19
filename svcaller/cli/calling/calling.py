@@ -81,6 +81,17 @@ def tra_filt(filtered_reads, read):
         filtered_reads.append(read)
 
 
+# FIXME: Quick hack:
+def chrom_int2str(chrom_int):
+    chrom_str = str(chrom_int + 1)
+    if chrom_str == "23":
+        chrom_str = "X"
+    elif chrom_str == "24":
+        chrom_str = "Y"
+
+    return chrom_str
+
+
 def clust_filt(read_iter, samfile, chrom_of_interest=22):
     '''Filter the input reads to only retain those read-pairs where there are other read-pairs with
     similar coordinates. This is an ugly implementation, needs refactoring.
@@ -105,11 +116,7 @@ def clust_filt(read_iter, samfile, chrom_of_interest=22):
             other_read_chrom = read.rname
             other_read_pos = read.pos
 
-        base_read_chrom_str = str(base_read_chrom + 1)
-        if base_read_chrom_str == "23":
-            base_read_chrom_str = "X"
-        elif base_read_chrom_str == "24":
-            base_read_chrom_str = "Y"
+        base_read_chrom_str = chrom_int2str(base_read_chrom)
 
         try:
             # Only consider reads nearby that are not optical/pcr duplicates and that are not secondary alignments
@@ -156,11 +163,16 @@ def call_events(filtered_reads):
     and then by position.'''
 
     # Detect overlapping read clusters...
-    #(cluster2reads, read2cluster) =
-    detect_clusters(filtered_reads)
+    clusters = detect_clusters(filtered_reads)
 
     # Pair up the clusters:
-    # XXX POSSIBLY OUT FILTER CLUSTERS WITH AMBIGUOUS PAIRINGS
+    # XXX CONTINUE HERE: ALSO, POSSIBLY OUT FILTER CLUSTERS WITH AMBIGUOUS PAIRINGS:
+    pair_clusters(clusters)
+
+    # TMP: PRINTING CLUSTERS TO A BED FILE:
+    for cluster in list(clusters):
+        print cluster.to_string()
+
 
 
 class ReadCluster:
@@ -181,20 +193,27 @@ class ReadCluster:
 
         first_read_start = min(map(lambda read: read.pos, read_list))
 
-        # NOTE: Using qlen as the length of the read for the purpose of determining
-        # cluster overlaps. I suspect this will perform adequately, but may need to
-        # adjust it to instead use matching sequence length instead at some point:
         last_read_end = max(map(lambda read: read.pos+read.qlen, read_list))
 
-        return "%d\t%d\t%d" % (first_read_chrom, first_read_start, last_read_end)
+        return "%s\t%d\t%d" % (chrom_int2str(first_read_chrom), first_read_start, last_read_end)
 
 
 def detect_clusters(reads):
     clusters = set()
-    read2cluster = {}
 
+    plus_strand_reads = filter(lambda read: not(read.flag & 16), reads)
+    minus_strand_reads = filter(lambda read: read.flag & 16, reads)
+    detect_clusters_single_strand(clusters, plus_strand_reads)
+    detect_clusters_single_strand(clusters, minus_strand_reads)
+
+    return clusters
+
+
+def detect_clusters_single_strand(clusters, reads):
     prev_read_chrom = None
     prev_read_end_pos = 0
+    curr_cluster = None
+
     for read in reads:
         # Detect if the read is on a different chromosome, or if it does not
         # overlap the previous read
@@ -207,12 +226,11 @@ def detect_clusters(reads):
         curr_cluster.add_read(read)
 
         prev_read_chrom = read.rname
-        prev_read_end_pos = read.pos + read.tlen
 
-    # TMP: PRINTING CLUSTERS TO A BED FILE:
-    for cluster in list(clusters):
-        print cluster.to_string()
-
+        # NOTE: Using qlen as the length of the read for the purpose of determining
+        # cluster overlaps. I suspect this will perform adequately, but may need to
+        # adjust it to instead use matching sequence length instead at some point:
+        prev_read_end_pos = read.pos + read.qlen
 
 
 
