@@ -210,8 +210,59 @@ def pair_clusters(clusters):
     for cluster in clusters:
         cluster.set_pairings(read2mate, read2cluster)
 
-    pdb.set_trace()
-    dummy = 1
+    # FIXME: This is getting messy:
+    return (read2cluster, read2mate)
+
+
+class GenomicEvent:
+    def __init__(self, terminus1_reads, terminus2_reads):
+        self._terminus1_reads = terminus1_reads
+        self._terminus2_reads = terminus2_reads
+
+    def to_string(self):
+        t1_chrom = self._terminus1_reads[0].rname
+        t1_first_read_start = min(map(lambda read: read.pos, list(self._terminus1_reads)))
+        t1_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads)))
+
+        t2_chrom = self._terminus2_reads[0].rname
+        t2_first_read_start = min(map(lambda read: read.pos, list(self._terminus2_reads)))
+        t2_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads)))
+
+        # Temporary code for printing genomic events in gff format...
+        # Hack: Generate an event-name based on the coordinates:
+        event_name = chrom_int2str(t1_chrom) + "_" + str(t1_first_read_start) + "_" + str(t2_last_read_end)
+
+        return "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s\n" % (chrom_int2str(t1_chrom), t1_first_read_start, t1_last_read_end, event_name) + \
+            "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s" % (chrom_int2str(t2_chrom), t2_first_read_start, t2_last_read_end, event_name)
+
+
+def define_events(clusters, read2cluster, read2mate):
+    '''Define a set of putative events by inspecting pairings of
+    clusters.'''
+
+    # Keep track of reads that have been assigned to an event:
+    reads_already_assigned = set()
+
+    events = set()
+
+    for cluster in clusters:
+        for paired_cluster in cluster.get_paired_clusters():
+            curr_cluster1_reads = filter(lambda read: read2cluster[read2mate[read]] == paired_cluster,
+                                         cluster.get_reads())
+            curr_cluster2_reads = filter(lambda read: read2cluster[read2mate[read]] == cluster,
+                                         paired_cluster.get_reads())
+
+            if reduce(lambda bool1, bool2: bool1 and bool2,
+                      [not read in reads_already_assigned for read in curr_cluster1_reads]) and \
+               reduce(lambda bool1, bool2: bool1 and bool2,
+                      [not read in reads_already_assigned for read in curr_cluster2_reads]):
+               # None of these reads have been assigned to an event. Assign them to a new
+               # event:
+               curr_event = GenomicEvent(curr_cluster1_reads, curr_cluster2_reads)
+               events.add(curr_event)
+               reads_already_assigned = reads_already_assigned.union(curr_cluster1_reads).union(curr_cluster2_reads)
+
+    return events
 
 
 def call_events(filtered_reads):
@@ -222,12 +273,19 @@ def call_events(filtered_reads):
     clusters = detect_clusters(filtered_reads)
 
     # Pair up the clusters:
-    # XXX CONTINUE HERE: ALSO, POSSIBLY OUT FILTER CLUSTERS WITH AMBIGUOUS PAIRINGS:
-    pair_clusters(clusters)
+    (read2cluster, read2mate) = pair_clusters(clusters)
 
-    # TMP: PRINTING CLUSTERS TO A BED FILE:
-    for cluster in list(clusters):
-        print cluster.to_string()
+    # Define the events, using those pairings:
+    putative_events = define_events(clusters, read2cluster, read2mate)
+
+    # TMP: PRINTING EVENTS TO A GFFFILE:
+    header = '''browser position chrX:66761874-66952461
+browser hide all
+track name=genomic_events\tdescription="Genomic_events"\tvisibility=2'''
+    print header
+
+    for event in list(putative_events):
+        print event.to_string()
 
 
 class ReadCluster:
@@ -240,6 +298,9 @@ class ReadCluster:
 
     def get_reads(self):
         return self._reads
+
+    def get_paired_clusters(self):
+        return self._paired_clusters
 
     def set_pairings(self, read2mate, read2cluster):
         '''Record all cluster pairings for this cluster.'''
