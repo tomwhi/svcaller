@@ -9,7 +9,7 @@ TRA = "TRA"
 DUP = "DUP"
 
 
-def event_filt(read_iter, event_type, flag_filter=256+1024+2048):
+def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
     filtered_reads = []
     for read in read_iter:
         if not read.flag & flag_filter:
@@ -235,7 +235,9 @@ def get_soft_clippings(read):
     '''Extract all soft-clipping secondary mapping coordinates from this
     read.'''
 
-    cigar_softclip_lengths = map(lambda tup: tup[1], filter(lambda tup: tup[0] == 4, read.cigartuples))
+    cigar_softclip_lengths = []
+    if read.cigartuples != None:
+        cigar_softclip_lengths = map(lambda tup: tup[1], filter(lambda tup: tup[0] == 4, read.cigartuples))
 
     softclip_starts = map(lambda tup: tuple(tup[1].split(",")[:2]), \
         filter(lambda tag: tag[0] == "SA", read.get_tags()))
@@ -412,6 +414,9 @@ class ReadCluster:
         '''Record all cluster pairings for this cluster.'''
 
         for read in self._reads:
+            if read.qname.split(":")[-1] == "18213":
+                pdb.set_trace()
+                dummy = 1
             mate = read2mate[read]
             mate_cluster = read2cluster[mate]
             self._paired_clusters.add(mate_cluster)
