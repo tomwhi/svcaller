@@ -82,13 +82,16 @@ def call_events_inner(filtered_bam):
 
     samfile = pysam.AlignmentFile(filtered_bam, "rb")
     filtered_reads = [r for r in list(samfile)]
-    events = call_events(filtered_reads)
 
-    # XXX FILTER/MARK WITH SOFT-CLIPPING, AND THEN PRINT THE RESULTING ANNOTATED RESULTS
-    # TO AN OUTPUT FILE.
+    # Call events:
+    events = list(call_events(filtered_reads))
 
+    # Filter on soft-clipping support:
+    filtered_events = filter(lambda event: event.has_soft_clip_support(), events)
 
-
+    # Print them out:
+    for event in filtered_events:
+        print event.to_string()
 
 
 

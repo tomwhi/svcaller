@@ -9,15 +9,6 @@ TRA = "TRA"
 DUP = "DUP"
 
 
-#def call_event(input_bam, output_name, event_type):
-#
-#    cluster_filtered_reads = cluster_filter(event_filtered_reads, samfile)
-#    pdb.set_trace()
-#    #XXX = call_events(second_filtered_bam)
-#    #XXX = check_softclipping(second_filtered_bam)
-#    #generate_outputs(XXX, XXX)
-
-
 def event_filt(read_iter, event_type, flag_filter=256+1024+2048):
     filtered_reads = []
     for read in read_iter:
@@ -214,10 +205,119 @@ def pair_clusters(clusters):
     return (read2cluster, read2mate)
 
 
+class SoftClipping:
+    def __init__(self, chrom, start, end):
+        self._chrom = chrom
+        self._start = start
+        self._end = end
+
+    def get_chrom(self):
+        return self._chrom
+
+    def get_start(self):
+        return self._start
+
+    def get_end(self):
+        return self._end
+
+    def is_in(self, chrom, start, end):
+        if self._chrom != chrom:
+            return False
+        elif self._end < start:
+                return False
+        elif self._start > end:
+                return False
+        else:
+            return True
+
+
+def get_soft_clippings(read):
+    '''Extract all soft-clipping secondary mapping coordinates from this
+    read.'''
+
+    cigar_softclip_lengths = map(lambda tup: tup[1], filter(lambda tup: tup[0] == 4, read.cigartuples))
+
+    softclip_starts = map(lambda tup: tuple(tup[1].split(",")[:2]), \
+        filter(lambda tag: tag[0] == "SA", read.get_tags()))
+
+    # FIXME: Not sure what the data will be like. Soft-clippings do not
+    # always have secondary alignments, so it may not be straightforward
+    # or even well-defined to pair up the above two lists.
+
+    # Solution: Currently, only consider reads with *exactly one* soft-clipping, for
+    # simplicity:
+    soft_clippings = []
+    if len(softclip_starts) == 1 and len(cigar_softclip_lengths) == len(softclip_starts):
+        chrom = softclip_starts[0][0]
+        start = int(softclip_starts[0][1])
+        end = start + cigar_softclip_lengths[0]
+        soft_clippings = [SoftClipping(chrom, start, end)]
+
+    return soft_clippings
+
+
+def condense_soft_clippings(soft_clippings):
+    if len(soft_clippings) > 0:
+        # FIXME: Currently, I will just assume that all soft-clippings in the input
+        # are overlapping. I should eventually change this to accommodate distinct
+        # soft clipping supports.
+        chrom = soft_clippings[0].get_chrom()
+        start = min(map(lambda soft_clipping: soft_clipping.get_start(), soft_clippings))
+        end = max(map(lambda soft_clipping: soft_clipping.get_end(), soft_clippings))
+        return [SoftClipping(chrom, start, end)]
+    else:
+        return []
+
+
+def test_matched_soft_clipping(reads1, reads2):
+    '''Examine soft-clipping of all reads in reads2, to see if any of the
+    soft-clipped coordinates are consistent with coordinates spanned by
+    all reads in reads1.'''
+
+    reads1_chrom = reads1[0].rname
+
+    # TEMPORARY SANITY CHECK:
+    for read in reads1:
+        assert read.rname == reads1_chrom
+
+    reads1_start = min(map(lambda read: read.pos, reads1))
+    reads1_end = max(map(lambda read: read.pos+read.qlen, reads1))
+
+    # Find all soft-clippings from reads2 that reside in the region spanned
+    # by reads in reads1:
+    consistent_soft_clippings = []
+    for read in reads2:
+        curr_soft_clippings = get_soft_clippings(read)
+        for soft_clipping in curr_soft_clippings:
+            if soft_clipping.is_in(chrom_int2str(reads1_chrom), reads1_start, reads1_end):
+                consistent_soft_clippings.append(soft_clipping)
+
+    # Derive a set of spatially-distinct, consensus soft-clippings
+    # from the above set:
+    consensus_soft_clippings = condense_soft_clippings(consistent_soft_clippings)
+    return consensus_soft_clippings
+
+
 class GenomicEvent:
     def __init__(self, terminus1_reads, terminus2_reads):
         self._terminus1_reads = terminus1_reads
         self._terminus2_reads = terminus2_reads
+
+        self._matched_soft_clippings_t1 = None
+        self._matched_soft_clippings_t2 = None
+
+    def has_soft_clip_support(self):
+        return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t1) > 0
+
+    def test_soft_clipping(self):
+    	'''Look at the soft-clipping for reads in terminus 1, and see if they match the
+    	position of reads in terminus 2. Then, do the reverse. Record the result'''
+
+        self._matched_softclips_t1 = test_matched_soft_clipping(\
+            self._terminus1_reads, self._terminus2_reads)
+
+        self._matched_softclips_t2 = test_matched_soft_clipping(\
+            self._terminus2_reads, self._terminus1_reads)
 
     def to_string(self):
         t1_chrom = self._terminus1_reads[0].rname
@@ -278,14 +378,20 @@ def call_events(filtered_reads):
     # Define the events, using those pairings:
     putative_events = define_events(clusters, read2cluster, read2mate)
 
-    # TMP: PRINTING EVENTS TO A GFFFILE:
-    header = '''browser position chrX:66761874-66952461
-browser hide all
-track name=genomic_events\tdescription="Genomic_events"\tvisibility=2'''
-    print header
+    # Mark each putative event with soft-clipping information of the reads contained in it:
+    for event in putative_events:
+    	event.test_soft_clipping()
 
-    for event in list(putative_events):
-        print event.to_string()
+    return putative_events
+
+    # TMP: PRINTING EVENTS TO A GFFFILE:
+#    header = '''browser position chrX:66761874-66952461
+#browser hide all
+#track name=genomic_events\tdescription="Genomic_events"\tvisibility=2'''
+#    print header
+#
+#    for event in list(putative_events):
+#        print event.to_string()
 
 
 class ReadCluster:
