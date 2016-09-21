@@ -41,12 +41,12 @@ def getRefMatch(eventChrom, eventStart, eventEnd, softclippedSeq, fasta_filename
   regs = [pybedtools.Interval(eventChrom, eventStart, eventEnd)]
   tmp_bedtool = pybedtools.BedTool(regs)
   refseq = tmp_bedtool.seq((eventChrom, eventStart, eventEnd), fasta_filename)
-  fw_match = processAlign(getAlign(refseq, softclippedSeq))
+  fwalign = getAlign(refseq, softclippedSeq)
+  fw_match = processAlign(fwalign)
 
   refseq_revcomp = revcomp(refseq)
-  rev_match = processAlign(getAlign(refseq_revcomp, softclippedSeq))
-
-  pdb.set_trace()
+  revalign = getAlign(refseq_revcomp, softclippedSeq)
+  rev_match = processAlign(revalign)
 
   if fw_match[0] > rev_match:
     return (fw_match[0], fw_match[1], "+")
