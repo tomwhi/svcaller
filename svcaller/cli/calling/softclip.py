@@ -61,7 +61,10 @@ def getRefMatchPos(eventChrom, eventStart, eventEnd, softclippedSeq, fasta_filen
   else:
     matchRefPosEnd = eventEnd - displacementFromRefStart
     matchRefPosStart = eventEnd - displacementFromRefStart - maxMatch
-  return (eventChrom, matchRefPosStart+1, matchRefPosEnd)
+  if maxMatch > 15: # Hard-coded match threshold:
+    return (eventChrom, matchRefPosStart+1, matchRefPosEnd)
+  else:
+    return None
 
 
 

@@ -2,6 +2,7 @@
 from datetime import datetime
 import pdb, sys
 import pysam
+import softclip
 
 DEL = "DEL"
 INV = "INV"
@@ -206,10 +207,11 @@ def pair_clusters(clusters):
 
 
 class SoftClipping:
-    def __init__(self, chrom, start, end):
-        self._chrom = chrom
-        self._start = start
-        self._end = end
+    def __init__(self, sequence):
+        self._chrom = None
+        self._start = None
+        self._end = None
+        self._seq = sequence
 
     def get_chrom(self):
         return self._chrom
@@ -220,7 +222,9 @@ class SoftClipping:
     def get_end(self):
         return self._end
 
-    def is_in(self, chrom, start, end):
+    def is_in(self, chrom, start, end, fasta_filename):
+        # Mapping-based approach:
+        comment = '''
         if self._chrom != chrom:
             return False
         elif self._end < start:
@@ -228,7 +232,17 @@ class SoftClipping:
         elif self._start > end:
                 return False
         else:
-            return True
+            return True'''
+
+        pos_tup = softclip.getRefMatchPos(chrom, start, end, self._seq, fasta_filename)
+        if pos_tup != None:
+            self._chrom = pos_tup[0]
+            self._start = pos_tup[1]
+            self._end = pos_tup[2]
+            print >> sys.stderr, pos_tup
+
+        # Sequence alignment-based approach:
+        return pos_tup != None
 
 
 def get_soft_clippings(read):
@@ -236,8 +250,18 @@ def get_soft_clippings(read):
     read.'''
 
     cigar_softclip_lengths = []
+    dist_to_softclipped = 0
     if read.cigartuples != None:
         cigar_softclip_lengths = map(lambda tup: tup[1], filter(lambda tup: tup[0] == 4, read.cigartuples))
+
+        # Calculate displacement of the softclipped region from the start of the *sequence*:
+        if len(cigar_softclip_lengths) > 0:
+            # This is completely retarded but oh well.
+            idxs = range(len(read.cigartuples))
+            arr = filter(lambda idx: map(lambda tup: tup[0] == 4, read.cigartuples)[idx], idxs)
+            first_softclip_idx = arr[0]
+            before_softclip_tups = read.cigartuples[:first_softclip_idx]
+            dist_to_softclipped = sum(map(lambda tup: tup[1], before_softclip_tups))
 
     softclip_starts = map(lambda tup: tuple(tup[1].split(",")[:2]), \
         filter(lambda tag: tag[0] == "SA", read.get_tags()))
@@ -249,11 +273,21 @@ def get_soft_clippings(read):
     # Solution: Currently, only consider reads with *exactly one* soft-clipping, for
     # simplicity:
     soft_clippings = []
-    if len(softclip_starts) == 1 and len(cigar_softclip_lengths) == len(softclip_starts):
-        chrom = softclip_starts[0][0]
-        start = int(softclip_starts[0][1])
-        end = start + cigar_softclip_lengths[0]
-        soft_clippings = [SoftClipping(chrom, start, end)]
+    if len(cigar_softclip_lengths) == 1: #len(softclip_starts) == 1 and 
+        # Record the softclip stated alignment coordinates, if present,
+        # although they may not be used:
+        chrom = None
+        start = None
+        end = None
+        if len(softclip_starts) == 1:
+            chrom = softclip_starts[0][0]
+            start = int(softclip_starts[0][1])
+            end = start + cigar_softclip_lengths[0]
+
+        # Get the sequence of the (single) soft-clipped section:
+        softclipped_seq = read.seq[dist_to_softclipped:dist_to_softclipped+cigar_softclip_lengths[0]]
+
+        soft_clippings = [SoftClipping(softclipped_seq)]
 
     return soft_clippings
 
@@ -266,12 +300,13 @@ def condense_soft_clippings(soft_clippings):
         chrom = soft_clippings[0].get_chrom()
         start = min(map(lambda soft_clipping: soft_clipping.get_start(), soft_clippings))
         end = max(map(lambda soft_clipping: soft_clipping.get_end(), soft_clippings))
-        return [SoftClipping(chrom, start, end)]
+
+        return [(chrom, start, end)]
     else:
         return []
 
 
-def test_matched_soft_clipping(reads1, reads2):
+def test_matched_soft_clipping(reads1, reads2, fasta_filename):
     '''Examine soft-clipping of all reads in reads2, to see if any of the
     soft-clipped coordinates are consistent with coordinates spanned by
     all reads in reads1.'''
@@ -291,7 +326,7 @@ def test_matched_soft_clipping(reads1, reads2):
     for read in reads2:
         curr_soft_clippings = get_soft_clippings(read)
         for soft_clipping in curr_soft_clippings:
-            if soft_clipping.is_in(chrom_int2str(reads1_chrom), reads1_start, reads1_end):
+            if soft_clipping.is_in(chrom_int2str(reads1_chrom), reads1_start, reads1_end, fasta_filename):
                 consistent_soft_clippings.append(soft_clipping)
 
     # Derive a set of spatially-distinct, consensus soft-clippings
@@ -305,21 +340,21 @@ class GenomicEvent:
         self._terminus1_reads = terminus1_reads
         self._terminus2_reads = terminus2_reads
 
-        self._matched_soft_clippings_t1 = None
-        self._matched_soft_clippings_t2 = None
+        self._matched_softclips_t1 = None
+        self._matched_softclips_t2 = None
 
     def has_soft_clip_support(self):
         return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t1) > 0
 
-    def test_soft_clipping(self):
+    def test_soft_clipping(self, fasta_filename):
     	'''Look at the soft-clipping for reads in terminus 1, and see if they match the
     	position of reads in terminus 2. Then, do the reverse. Record the result'''
 
         self._matched_softclips_t1 = test_matched_soft_clipping(\
-            self._terminus1_reads, self._terminus2_reads)
+            self._terminus1_reads, self._terminus2_reads, fasta_filename)
 
         self._matched_softclips_t2 = test_matched_soft_clipping(\
-            self._terminus2_reads, self._terminus1_reads)
+            self._terminus2_reads, self._terminus1_reads, fasta_filename)
 
     def to_string(self):
         t1_chrom = self._terminus1_reads[0].rname
@@ -336,6 +371,32 @@ class GenomicEvent:
 
         return "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s\n" % (chrom_int2str(t1_chrom), t1_first_read_start, t1_last_read_end, event_name) + \
             "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s" % (chrom_int2str(t2_chrom), t2_first_read_start, t2_last_read_end, event_name)
+
+    def get_softclip_strings(self):
+        t1_chrom = self._terminus1_reads[0].rname
+        t1_first_read_start = min(map(lambda read: read.pos, list(self._terminus1_reads)))
+        t1_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads)))
+
+        t2_chrom = self._terminus2_reads[0].rname
+        t2_first_read_start = min(map(lambda read: read.pos, list(self._terminus2_reads)))
+        t2_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads)))
+
+        event_name = chrom_int2str(t1_chrom) + "_" + str(t1_first_read_start) + "_" + str(t2_last_read_end)
+
+        out_string = ""
+        if self._matched_softclips_t1 != None:
+            chrom = self._matched_softclips_t1[0][0]
+            start = self._matched_softclips_t1[0][1]
+            end = self._matched_softclips_t1[0][2]
+            out_string += "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s\n" % (chrom, start, end, event_name)
+
+        if self._matched_soft_clips_t2 != None:
+            chrom = self._matched_softclips_t2[0][0]
+            start = self._matched_softclips_t2[0][1]
+            end = self._matched_softclips_t2[0][2]
+            out_string += "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s\n" % (chrom, start, end, event_name)
+
+        return out_string
 
 
 def define_events(clusters, read2cluster, read2mate):
@@ -367,7 +428,7 @@ def define_events(clusters, read2cluster, read2mate):
     return events
 
 
-def call_events(filtered_reads):
+def call_events(filtered_reads, fasta_filename):
     '''Call events on the input reads. The reads must be sorted by chromosome
     and then by position.'''
 
@@ -382,7 +443,7 @@ def call_events(filtered_reads):
 
     # Mark each putative event with soft-clipping information of the reads contained in it:
     for event in putative_events:
-    	event.test_soft_clipping()
+    	event.test_soft_clipping(fasta_filename)
 
     return putative_events
 
@@ -414,9 +475,6 @@ class ReadCluster:
         '''Record all cluster pairings for this cluster.'''
 
         for read in self._reads:
-            if read.qname.split(":")[-1] == "18213":
-                pdb.set_trace()
-                dummy = 1
             mate = read2mate[read]
             mate_cluster = read2cluster[mate]
             self._paired_clusters.add(mate_cluster)
