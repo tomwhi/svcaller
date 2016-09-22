@@ -22,7 +22,11 @@ def getAlign(ref_seq, query_seq):
 
 def processAlign(alignment):
   matchSizes = map(lambda tup: getMatchSize(tup), alignment.cigar)
-  maxMatch = max(matchSizes)
+  try:
+    maxMatch = max(matchSizes)
+  except Exception, e:
+    pdb.set_trace()
+    dummy = 1
   matchingIdxs = []
   for idx in range(len(matchSizes)):
     if matchSizes[idx] == maxMatch:

@@ -287,7 +287,12 @@ def get_soft_clippings(read):
         # Get the sequence of the (single) soft-clipped section:
         softclipped_seq = read.seq[dist_to_softclipped:dist_to_softclipped+cigar_softclip_lengths[0]]
 
-        soft_clippings = [SoftClipping(softclipped_seq)]
+        # FIXME: I really need to make sure the exraction of the softclip sequence/above
+        # lengths is correct. It's tricky due to the complicated cigar string structure.
+        # Currently, just preventing crashes by not creating an object when the sequence
+        # is empty (I'm in a hurry to get some initial results!):
+        if len(softclipped_seq) > 0:
+            soft_clippings = [SoftClipping(softclipped_seq)]
 
     return soft_clippings
 
