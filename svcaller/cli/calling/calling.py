@@ -325,9 +325,6 @@ def test_matched_soft_clipping(reads1, reads2, fasta_filename):
     consistent_soft_clippings = []
     for read in reads2:
         curr_soft_clippings = get_soft_clippings(read)
-        if read.qname.split(":")[-1] == "18213":
-            pdb.set_trace()
-            dummy = 1
         for soft_clipping in curr_soft_clippings:
             chrom_str = chrom_int2str(reads1_chrom)
             if soft_clipping.is_in(chrom_str, reads1_start, reads1_end, fasta_filename):
@@ -348,7 +345,7 @@ class GenomicEvent:
         self._matched_softclips_t2 = []
 
     def has_soft_clip_support(self):
-        return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t1) > 0
+        return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t2) > 0
 
     def test_soft_clipping(self, fasta_filename):
     	'''Look at the soft-clipping for reads in terminus 1, and see if they match the
@@ -359,6 +356,8 @@ class GenomicEvent:
 
         self._matched_softclips_t2 = test_matched_soft_clipping(\
             self._terminus2_reads, self._terminus1_reads, fasta_filename)
+
+        tmp = 1
 
     def to_string(self):
         t1_chrom = self._terminus1_reads[0].rname
