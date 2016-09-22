@@ -22,6 +22,9 @@ def getAlign(ref_seq, query_seq):
 
 def processAlign(alignment):
   matchSizes = map(lambda tup: getMatchSize(tup), alignment.cigar)
+  # FIXME: Another nasty quick fix:
+  if len(alignment.cigar) == 0:
+    return (0, -1)
   try:
     maxMatch = max(matchSizes)
   except Exception, e:
