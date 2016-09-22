@@ -3,3 +3,4 @@ pysam
 pybedtools
 swalign
 numpy
+pandas
