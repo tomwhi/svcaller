@@ -1,2 +1,4 @@
 click
 pysam
+pybedtools
+swalign
