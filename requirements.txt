@@ -2,3 +2,4 @@ click
 pysam
 pybedtools
 swalign
+numpy
