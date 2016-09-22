@@ -325,8 +325,12 @@ def test_matched_soft_clipping(reads1, reads2, fasta_filename):
     consistent_soft_clippings = []
     for read in reads2:
         curr_soft_clippings = get_soft_clippings(read)
+        if read.qname.split(":")[-1] == "18213":
+            pdb.set_trace()
+            dummy = 1
         for soft_clipping in curr_soft_clippings:
-            if soft_clipping.is_in(chrom_int2str(reads1_chrom), reads1_start, reads1_end, fasta_filename):
+            chrom_str = chrom_int2str(reads1_chrom)
+            if soft_clipping.is_in(chrom_str, reads1_start, reads1_end, fasta_filename):
                 consistent_soft_clippings.append(soft_clipping)
 
     # Derive a set of spatially-distinct, consensus soft-clippings
@@ -340,8 +344,8 @@ class GenomicEvent:
         self._terminus1_reads = terminus1_reads
         self._terminus2_reads = terminus2_reads
 
-        self._matched_softclips_t1 = None
-        self._matched_softclips_t2 = None
+        self._matched_softclips_t1 = []
+        self._matched_softclips_t2 = []
 
     def has_soft_clip_support(self):
         return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t1) > 0
@@ -384,13 +388,13 @@ class GenomicEvent:
         event_name = chrom_int2str(t1_chrom) + "_" + str(t1_first_read_start) + "_" + str(t2_last_read_end)
 
         out_string = ""
-        if self._matched_softclips_t1 != None:
+        if self._matched_softclips_t1 != []:
             chrom = self._matched_softclips_t1[0][0]
             start = self._matched_softclips_t1[0][1]
             end = self._matched_softclips_t1[0][2]
             out_string += "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s\n" % (chrom, start, end, event_name)
 
-        if self._matched_soft_clips_t2 != None:
+        if self._matched_softclips_t2 != []:
             chrom = self._matched_softclips_t2[0][0]
             start = self._matched_softclips_t2[0][1]
             end = self._matched_softclips_t2[0][2]

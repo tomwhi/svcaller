@@ -13,8 +13,8 @@ def getMatchSize(tup):
     return 0
 
 def getAlign(ref_seq, query_seq):
-  match = 2
-  mismatch = -1
+  match = 1
+  mismatch = -5
   scoring = swalign.NucleotideScoringMatrix(match, mismatch)
   sw = swalign.LocalAlignment(scoring)  # you can also choose gap penalties, etc...
   alignment = sw.align(ref_seq, query_seq)
@@ -48,23 +48,26 @@ def getRefMatch(eventChrom, eventStart, eventEnd, softclippedSeq, fasta_filename
   revalign = getAlign(refseq_revcomp, softclippedSeq)
   rev_match = processAlign(revalign)
 
-  if fw_match[0] > rev_match:
+  if fw_match[0] > rev_match[0]:
     return (fw_match[0], fw_match[1], "+")
   else:
     return (rev_match[0], rev_match[1], "-")
 
 def getRefMatchPos(eventChrom, eventStart, eventEnd, softclippedSeq, fasta_filename):
-  (maxMatch, displacementFromRefStart, strand) = getRefMatch(eventChrom, eventStart, eventEnd, softclippedSeq, fasta_filename)
-  if strand == "+":
-    matchRefPosStart = eventStart + displacementFromRefStart
-    matchRefPosEnd = matchRefPosStart + maxMatch
-  else:
-    matchRefPosEnd = eventEnd - displacementFromRefStart
-    matchRefPosStart = eventEnd - displacementFromRefStart - maxMatch
-  if maxMatch > 15: # Hard-coded match threshold:
-    return (eventChrom, matchRefPosStart+1, matchRefPosEnd)
-  else:
-    return None
+#    if eventEnd == 66944558 and softclippedSeq == "ATAAATAAATAAATAAATAAATACGTACATACATACACACATACATACA":
+#        pdb.set_trace()
+#        dummy = 1
+    (maxMatch, displacementFromRefStart, strand) = getRefMatch(eventChrom, eventStart, eventEnd, softclippedSeq, fasta_filename)
+    if strand == "+":
+        matchRefPosStart = eventStart + displacementFromRefStart
+        matchRefPosEnd = matchRefPosStart + maxMatch
+    else:
+        matchRefPosEnd = eventEnd - displacementFromRefStart
+        matchRefPosStart = eventEnd - displacementFromRefStart - maxMatch
+    if maxMatch > 15: # Hard-coded match threshold:
+        return (eventChrom, matchRefPosStart+1, matchRefPosEnd)
+    else:
+        return None
 
 
 
