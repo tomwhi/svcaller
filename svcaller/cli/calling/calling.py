@@ -273,7 +273,7 @@ def get_soft_clippings(read):
     # Solution: Currently, only consider reads with *exactly one* soft-clipping, for
     # simplicity:
     soft_clippings = []
-    if len(cigar_softclip_lengths) == 1: #len(softclip_starts) == 1 and 
+    if len(cigar_softclip_lengths) == 1: #len(softclip_starts) == 1 and
         # Record the softclip stated alignment coordinates, if present,
         # although they may not be used:
         chrom = None
@@ -325,14 +325,23 @@ def test_matched_soft_clipping(reads1, reads2, fasta_filename):
     reads1_start = min(map(lambda read: read.pos, reads1))
     reads1_end = max(map(lambda read: read.pos+read.qlen, reads1))
 
+    # FIXME: Hard-coding an extension value here. Make this a command-line
+    # parameter instead:
+    extension_length = 100
+    terminus1_start = reads1_start - 100
+    terminus1_end = reads1_end + 100
+
     # Find all soft-clippings from reads2 that reside in the region spanned
     # by reads in reads1:
     consistent_soft_clippings = []
     for read in reads2:
+#        if read.qname.split(":")[-1] == "10979":
+#            pdb.set_trace()
+#            dummy = 1
         curr_soft_clippings = get_soft_clippings(read)
         for soft_clipping in curr_soft_clippings:
             chrom_str = chrom_int2str(reads1_chrom)
-            if soft_clipping.is_in(chrom_str, reads1_start, reads1_end, fasta_filename):
+            if soft_clipping.is_in(chrom_str, terminus1_start, terminus1_end, fasta_filename):
                 consistent_soft_clippings.append(soft_clipping)
 
     # Derive a set of spatially-distinct, consensus soft-clippings
@@ -537,36 +546,3 @@ def detect_clusters_single_strand(clusters, reads):
         # cluster overlaps. I suspect this will perform adequately, but may need to
         # adjust it to instead use matching sequence length instead at some point:
         prev_read_end_pos = read.pos + read.qlen
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
