@@ -4,7 +4,7 @@ import os, pdb
 import click
 import pysam
 
-from svcaller.cli.calling.calling import event_filt, clust_filt, call_events
+from svcaller.cli.calling.calling import event_filt, clust_filt, call_events, filter_on_shared_termini
 from svcaller.cli.calling.calling import DEL, INV, TRA, DUP
 
 
@@ -95,6 +95,13 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, softclips_gff):
     # Filter on soft-clipping support:
     filtered_events = filter(lambda event: event.has_soft_clip_support(), events)
 
+    # Filter on discordant read support depth:
+    filtered_events = filter(lambda event: (len(event._terminus1_reads) > 5 and len(event._terminus2_reads) > 5), filtered_events)
+
+    # Filter on event terminus sharing (exclude any events that have
+    # overlapping termini):
+    filtered_events = filter_on_shared_termini(filtered_events)
+
     # Print them out:
     for event in filtered_events:
         print >> events_gff, event.to_string()
@@ -104,41 +111,3 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, softclips_gff):
 
     events_gff.close()
     softclips_gff.close()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

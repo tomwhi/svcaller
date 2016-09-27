@@ -4,7 +4,7 @@ import pybedtools
 import swalign
 
 def revcomp(seq):
-  return "".join([{"A":"T","C":"G","G":"C","T":"A"}[lett] for lett in [seq[i] for i in [len(seq) - idx - 1 for idx in range(len(seq))]]])
+  return "".join([{"A":"T","C":"G","G":"C","T":"A","N":"N"}[lett] for lett in [seq[i] for i in [len(seq) - idx - 1 for idx in range(len(seq))]]])
 
 def getMatchSize(tup):
   if tup[1] == "M":
@@ -75,81 +75,3 @@ def getRefMatchPos(eventChrom, eventStart, eventEnd, softclippedSeq, fasta_filen
         return (eventChrom, matchRefPosStart+1, matchRefPosEnd)
     else:
         return None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

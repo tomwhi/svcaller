@@ -311,25 +311,9 @@ def condense_soft_clippings(soft_clippings):
         return []
 
 
-def test_matched_soft_clipping(reads1, reads2, fasta_filename):
+def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
     '''Examine soft-clipping of all reads in reads2, to see if any of the
-    soft-clipped coordinates are consistent with coordinates spanned by
-    all reads in reads1.'''
-
-    reads1_chrom = reads1[0].rname
-
-    # TEMPORARY SANITY CHECK:
-    for read in reads1:
-        assert read.rname == reads1_chrom
-
-    reads1_start = min(map(lambda read: read.pos, reads1))
-    reads1_end = max(map(lambda read: read.pos+read.qlen, reads1))
-
-    # FIXME: Hard-coding an extension value here. Make this a command-line
-    # parameter instead:
-    extension_length = 100
-    terminus1_start = reads1_start - 100
-    terminus1_end = reads1_end + 100
+    soft-clipped coordinates are consistent with the specified coordinates.'''
 
     # Find all soft-clippings from reads2 that reside in the region spanned
     # by reads in reads1:
@@ -340,8 +324,7 @@ def test_matched_soft_clipping(reads1, reads2, fasta_filename):
 #            dummy = 1
         curr_soft_clippings = get_soft_clippings(read)
         for soft_clipping in curr_soft_clippings:
-            chrom_str = chrom_int2str(reads1_chrom)
-            if soft_clipping.is_in(chrom_str, terminus1_start, terminus1_end, fasta_filename):
+            if soft_clipping.is_in(chrom, terminus1_start, terminus1_end, fasta_filename):
                 consistent_soft_clippings.append(soft_clipping)
 
     # Derive a set of spatially-distinct, consensus soft-clippings
@@ -361,17 +344,44 @@ class GenomicEvent:
     def has_soft_clip_support(self):
         return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t2) > 0
 
+    def get_terminus1_span(self):
+        return self._get_reads_span(self._terminus1_reads)
+
+    def get_terminus2_span(self):
+        return self._get_reads_span(self._terminus2_reads)
+
+    def _get_reads_span(self, reads):
+        reads_chrom = reads[0].rname
+
+        # TEMPORARY SANITY CHECK:
+        for read in reads:
+            assert read.rname == reads_chrom
+
+        reads_start = min(map(lambda read: read.pos, reads))
+        reads_end = max(map(lambda read: read.pos+read.qlen, reads))
+
+        # FIXME: Hard-coding an extension value here. Make this a command-line
+        # parameter instead:
+        extension_length = 100
+        start = reads_start - 100
+        end = reads_end + 100
+        chrom = chrom_int2str(reads_chrom)
+        return (chrom, start, end)
+
     def test_soft_clipping(self, fasta_filename):
     	'''Look at the soft-clipping for reads in terminus 1, and see if they match the
     	position of reads in terminus 2. Then, do the reverse. Record the result'''
 
+        terminus1_span = self.get_terminus1_span()
+        terminus2_span = self.get_terminus2_span()
+
         self._matched_softclips_t1 = test_matched_soft_clipping(\
-            self._terminus1_reads, self._terminus2_reads, fasta_filename)
+            terminus1_span[0], terminus1_span[1], terminus1_span[2], \
+            self._terminus2_reads, fasta_filename)
 
         self._matched_softclips_t2 = test_matched_soft_clipping(\
-            self._terminus2_reads, self._terminus1_reads, fasta_filename)
-
-        tmp = 1
+            terminus2_span[0], terminus2_span[1], terminus2_span[2], \
+            self._terminus1_reads, fasta_filename)
 
     def to_string(self):
         t1_chrom = self._terminus1_reads[0].rname
@@ -398,7 +408,8 @@ class GenomicEvent:
         t2_first_read_start = min(map(lambda read: read.pos, list(self._terminus2_reads)))
         t2_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads)))
 
-        event_name = chrom_int2str(t1_chrom) + "_" + str(t1_first_read_start) + "_" + str(t2_last_read_end)
+        event_name = chrom_int2str(t1_chrom) + ":" + str(t1_first_read_start) + "-" + str(t1_last_read_end) + "," + \
+            chrom_int2str(t2_chrom) + ":" + str(t2_first_read_start) + "-" + str(t2_last_read_end)
 
         out_string = ""
         if self._matched_softclips_t1 != []:
@@ -511,6 +522,11 @@ class ReadCluster:
         last_read_end = max(map(lambda read: read.pos+read.qlen, read_list))
 
         return "%s\t%d\t%d" % (chrom_int2str(first_read_chrom), first_read_start, last_read_end)
+
+
+def filter_on_shared_termini(events):
+
+    return filtered_events
 
 
 def detect_clusters(reads):
