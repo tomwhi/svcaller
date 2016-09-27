@@ -286,13 +286,20 @@ def get_soft_clippings(read):
 
         # Get the sequence of the (single) soft-clipped section:
         softclipped_seq = read.seq[dist_to_softclipped:dist_to_softclipped+cigar_softclip_lengths[0]]
+        softclipped_quals = read.query_qualities[dist_to_softclipped:dist_to_softclipped+cigar_softclip_lengths[0]]
+        softclipped_seq_masked = ""
+        for idx in range(len(softclipped_seq)):
+            if softclipped_quals[idx] < 30:
+                softclipped_seq_masked += "N"
+            else:
+                softclipped_seq_masked += softclipped_seq[idx]
 
         # FIXME: I really need to make sure the exraction of the softclip sequence/above
         # lengths is correct. It's tricky due to the complicated cigar string structure.
         # Currently, just preventing crashes by not creating an object when the sequence
         # is empty (I'm in a hurry to get some initial results!):
-        if len(softclipped_seq) > 0:
-            soft_clippings = [SoftClipping(softclipped_seq)]
+        if len(softclipped_seq_masked) > 0:
+            soft_clippings = [SoftClipping(softclipped_seq_masked)]
 
     return soft_clippings
 
@@ -324,7 +331,7 @@ def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
 #            dummy = 1
         curr_soft_clippings = get_soft_clippings(read)
         for soft_clipping in curr_soft_clippings:
-            if soft_clipping.is_in(chrom, terminus1_start, terminus1_end, fasta_filename):
+            if soft_clipping.is_in(chrom, start, end, fasta_filename):
                 consistent_soft_clippings.append(soft_clipping)
 
     # Derive a set of spatially-distinct, consensus soft-clippings
@@ -524,8 +531,70 @@ class ReadCluster:
         return "%s\t%d\t%d" % (chrom_int2str(first_read_chrom), first_read_start, last_read_end)
 
 
-def filter_on_shared_termini(events):
+def cmp_coords(coords1, coords2):
+    if coords1[0] < coords2[0]:
+        return -1
+    elif coords1[0] > coords2[0]:
+        return 1
+    else:
+        if coords1[1] < coords2[1]:
+            return -1
+        elif coords1[1] > coords2[1]:
+            return 1
+        else:
+            if coords1[2] < coords2[2]:
+                return -1
+            elif coords1[2] > coords2[2]:
+                return 1
+            else:
+                return 0
 
+
+def filter_on_shared_termini(events):
+    # Get dictionary of events for each span (should almost always be one
+    # event per span, as a span is a (chrom, start, end) tuple):
+    terminus_span_to_events = {}
+    for event in events:
+        terminus1_span = event.get_terminus1_span()
+        if not terminus_span_to_events.has_key(terminus1_span):
+            terminus_span_to_events[terminus1_span] = []
+        terminus_span_to_events[terminus1_span].append(event)
+
+        terminus2_span = event.get_terminus2_span()
+        if not terminus_span_to_events.has_key(terminus2_span):
+            terminus_span_to_events[terminus2_span] = []
+        terminus_span_to_events[terminus2_span].append(event)
+
+    all_termini = terminus_span_to_events.keys()
+    all_termini.sort(cmp_coords)
+
+    # Scan over the events in ascending order, and find any sequential
+    # overlapping termini. Record all events that have one or more
+    # overlapping termini:
+    events_with_overlaps = set()
+    terminus_idx = 0
+    prev_chrom = None
+    prev_start = -1
+    prev_end = -1
+    prev_terminus = None
+    while terminus_idx < len(all_termini):
+        curr_terminus = all_termini[terminus_idx]
+        if curr_terminus[0] != prev_chrom or curr_terminus[1] > prev_end:
+            # New terminus cluster:
+            prev_chrom = curr_terminus[0]
+            prev_start = curr_terminus[1]
+        else:
+            # This terminus overlaps the existing cluster of termini:
+            for event in terminus_span_to_events[curr_terminus]:
+                events_with_overlaps.add(event)
+            for event in terminus_span_to_events[prev_terminus]:
+                events_with_overlaps.add(event)
+        prev_end = curr_terminus[2]
+        prev_terminus = curr_terminus
+        terminus_idx += 1
+
+    filtered_events = filter(lambda event: not event in events_with_overlaps,
+                             events)
     return filtered_events
 
 
