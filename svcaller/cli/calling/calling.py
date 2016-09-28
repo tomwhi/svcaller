@@ -322,11 +322,20 @@ def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
     '''Examine soft-clipping of all reads in reads2, to see if any of the
     soft-clipped coordinates are consistent with the specified coordinates.'''
 
+    # FIXME: Quick hacky solution:
+    # If there are many no-call (phred score == 2) reads in all the reads, then
+    # simply return that the read has no useable matching softclipping
+    # sequence:
+    poor_qual_bp = len(filter(lambda qual: qual == 2, reduce(lambda l1, l2: l1 + l2, map(lambda read: read.query_qualities, reads2))))
+    total_bp = len(reduce(lambda l1, l2: l1 + l2, map(lambda read: read.query_qualities, reads2)))
+    if poor_qual_bp/float(total_bp) > 0.2:
+        return []
+
     # Find all soft-clippings from reads2 that reside in the region spanned
     # by reads in reads1:
     consistent_soft_clippings = []
     for read in reads2:
-#        if read.qname.split(":")[-1] == "10979":
+#        if read.qname.split(":")[-1] == "87513":
 #            pdb.set_trace()
 #            dummy = 1
         curr_soft_clippings = get_soft_clippings(read)
