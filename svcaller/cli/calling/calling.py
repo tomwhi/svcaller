@@ -399,7 +399,13 @@ class GenomicEvent:
             terminus2_span[0], terminus2_span[1], terminus2_span[2], \
             self._terminus1_reads, fasta_filename)
 
-    def to_string(self):
+    def get_t1_depth(self):
+        return len(self._terminus1_reads)
+
+    def get_t2_depth(self):
+        return len(self._terminus2_reads)
+
+    def get_gtf(self):
         t1_chrom = self._terminus1_reads[0].rname
         t1_first_read_start = min(map(lambda read: read.pos, list(self._terminus1_reads)))
         t1_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads)))
@@ -409,13 +415,18 @@ class GenomicEvent:
         t2_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads)))
 
         # Temporary code for printing genomic events in gff format...
-        # Hack: Generate an event-name based on the coordinates:
-        event_name = chrom_int2str(t1_chrom) + "_" + str(t1_first_read_start) + "_" + str(t2_last_read_end)
+        t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
+          (chrom_int2str(t1_chrom), t1_first_read_start, t1_last_read_end, self.get_t1_depth(),
+           self.get_event_name(), self.get_event_name())
 
-        return "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s\n" % (chrom_int2str(t1_chrom), t1_first_read_start, t1_last_read_end, event_name) + \
-            "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s" % (chrom_int2str(t2_chrom), t2_first_read_start, t2_last_read_end, event_name)
+        t2_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
+          (chrom_int2str(t2_chrom), t2_first_read_start, t2_last_read_end, self.get_t2_depth(),
+           self.get_event_name(), self.get_event_name())
 
-    def get_softclip_strings(self):
+        return t1_gtf + t2_gtf + self.get_softclip_gtf()
+
+    # Hack: Generate an event-name based on the coordinates:
+    def get_event_name(self):
         t1_chrom = self._terminus1_reads[0].rname
         t1_first_read_start = min(map(lambda read: read.pos, list(self._terminus1_reads)))
         t1_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads)))
@@ -424,23 +435,29 @@ class GenomicEvent:
         t2_first_read_start = min(map(lambda read: read.pos, list(self._terminus2_reads)))
         t2_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads)))
 
-        event_name = chrom_int2str(t1_chrom) + ":" + str(t1_first_read_start) + "-" + str(t1_last_read_end) + "," + \
-            chrom_int2str(t2_chrom) + ":" + str(t2_first_read_start) + "-" + str(t2_last_read_end)
+        return chrom_int2str(t1_chrom) + ":" + str(t1_first_read_start) + "-" + str(t1_last_read_end) + \
+          "," + chrom_int2str(t2_chrom) + ":" + str(t2_first_read_start) + "-" + str(t2_last_read_end)
 
-        out_string = ""
+    def get_softclip_gtf(self):
+        t1_gtf = ""
         if self._matched_softclips_t1 != []:
             chrom = self._matched_softclips_t1[0][0]
             start = self._matched_softclips_t1[0][1]
             end = self._matched_softclips_t1[0][2]
-            out_string += "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s\n" % (chrom, start, end, event_name)
+            t1_gtf = "%s\tSV_event\tCDS\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
+            (chrom, start, end, len(self._matched_softclips_t1),
+            self.get_event_name(), self.get_event_name())
 
+        t2_gtf = ""
         if self._matched_softclips_t2 != []:
             chrom = self._matched_softclips_t2[0][0]
             start = self._matched_softclips_t2[0][1]
             end = self._matched_softclips_t2[0][2]
-            out_string += "chr%s\ta\tb\t%d\t%d\t500\t+\t.\t%s\n" % (chrom, start, end, event_name)
+            t2_gtf = "%s\tSV_event\tCDS\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
+            (chrom, start, end, len(self._matched_softclips_t2),
+            self.get_event_name(), self.get_event_name())
 
-        return out_string
+        return t1_gtf + t2_gtf
 
 
 def define_events(clusters, read2cluster, read2mate):

@@ -74,16 +74,13 @@ def cluster_filter_inner(output_bam, input_bam):
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.option('--fasta-filename', type=str, required=True)
 @click.option('--events-gff', type=str, default = "events.gff", required=False)
-@click.option('--softclips-gff', type=str, default = "softclippings.gff", required=False)
 @click.pass_context
-def call_events_cmd(ctx, input_bam, fasta_filename, events_gff, softclips_gff):
+def call_events_cmd(ctx, input_bam, fasta_filename, events_gff):
     events_outfile = open(events_gff, 'w')
-    softclips_outfile = open(softclips_gff, 'w')
-    output = call_events_inner(input_bam, fasta_filename, events_outfile, softclips_outfile)
-    return output
+    call_events_inner(input_bam, fasta_filename, events_outfile)
 
 
-def call_events_inner(filtered_bam, fasta_filename, events_gff, softclips_gff):
+def call_events_inner(filtered_bam, fasta_filename, events_gff):
     logging.info("Calling events on file {}:".format(filtered_bam))
 
     samfile = pysam.AlignmentFile(filtered_bam, "rb")
@@ -104,10 +101,6 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, softclips_gff):
 
     # Print them out:
     for event in filtered_events:
-        print >> events_gff, event.to_string()
-
-    for event in filtered_events:
-        print >> softclips_gff, event.get_softclip_strings()
+        print >> events_gff, event.get_gtf()
 
     events_gff.close()
-    softclips_gff.close()
