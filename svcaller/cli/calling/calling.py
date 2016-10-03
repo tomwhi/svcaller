@@ -357,39 +357,54 @@ class GenomicEvent:
         self._matched_softclips_t1 = []
         self._matched_softclips_t2 = []
 
+    def get_t1_mapqual(self):
+        mapqual = max(map(lambda read: read.mapq, self._terminus1_reads))
+        return mapqual
+
+    def get_t2_mapqual(self):
+        return max(map(lambda read: read.mapq, self._terminus1_reads))
+
     def has_soft_clip_support(self):
         return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t2) > 0
 
-    def get_terminus1_span(self):
-        return self._get_reads_span(self._terminus1_reads)
+    def get_terminus1_span(self, extension_length=0):
+        return self._get_reads_span(self._terminus1_reads, extension_length=extension_length)
 
-    def get_terminus2_span(self):
-        return self._get_reads_span(self._terminus2_reads)
+    def get_terminus2_span(self, extension_length=0):
+        return self._get_reads_span(self._terminus2_reads, extension_length=extension_length)
 
-    def _get_reads_span(self, reads):
+    def _get_reads_span(self, reads, extension_length=0):
         reads_chrom = reads[0].rname
+        reads_strand = "+"
+        if reads[0].flag & 16:
+            reads_strand = "-"
 
         # TEMPORARY SANITY CHECK:
         for read in reads:
+            curr_strand = "+"
+            if read.flag & 16:
+                curr_strand = "-"
             assert read.rname == reads_chrom
+            assert curr_strand == reads_strand
 
         reads_start = min(map(lambda read: read.pos, reads))
         reads_end = max(map(lambda read: read.pos+read.qlen, reads))
 
         # FIXME: Hard-coding an extension value here. Make this a command-line
         # parameter instead:
-        extension_length = 100
-        start = reads_start - 100
-        end = reads_end + 100
+        start = reads_start - extension_length
+        end = reads_end + extension_length
         chrom = chrom_int2str(reads_chrom)
-        return (chrom, start, end)
+        return (chrom, start, end, reads_strand)
 
     def test_soft_clipping(self, fasta_filename):
     	'''Look at the soft-clipping for reads in terminus 1, and see if they match the
     	position of reads in terminus 2. Then, do the reverse. Record the result'''
 
-        terminus1_span = self.get_terminus1_span()
-        terminus2_span = self.get_terminus2_span()
+        # NOTE: Extend the event termini for the purpose of testing for
+        # soft-clipping support:
+        terminus1_span = self.get_terminus1_span(extension_length=100)
+        terminus2_span = self.get_terminus2_span(extension_length=100)
 
         self._matched_softclips_t1 = test_matched_soft_clipping(\
             terminus1_span[0], terminus1_span[1], terminus1_span[2], \
@@ -578,7 +593,7 @@ def cmp_coords(coords1, coords2):
 
 def filter_on_shared_termini(events):
     # Get dictionary of events for each span (should almost always be one
-    # event per span, as a span is a (chrom, start, end) tuple):
+    # event per span, as a span is a (chrom, start, end, strand) tuple):
     terminus_span_to_events = {}
     for event in events:
         terminus1_span = event.get_terminus1_span()
@@ -598,13 +613,31 @@ def filter_on_shared_termini(events):
     # overlapping termini. Record all events that have one or more
     # overlapping termini:
     events_with_overlaps = set()
+    plus_strand_termini = filter(lambda tup: tup[-1] == "+", all_termini)
+    minus_strand_termini = filter(lambda tup: tup[-1] == "-", all_termini)
+    events_with_plus_strand_overlaps = \
+        find_terminus_overlaps(plus_strand_termini, terminus_span_to_events)
+    events_with_minus_strand_overlaps = \
+        find_terminus_overlaps(minus_strand_termini, terminus_span_to_events)
+
+    events_with_overlaps = \
+        events_with_plus_strand_overlaps.union(events_with_minus_strand_overlaps)
+
+    filtered_events = filter(lambda event: not event in events_with_overlaps,
+                             events)
+
+    return filtered_events
+
+
+def find_terminus_overlaps(termini, terminus_span_to_events):
+    events_with_overlaps = set()
     terminus_idx = 0
     prev_chrom = None
     prev_start = -1
     prev_end = -1
     prev_terminus = None
-    while terminus_idx < len(all_termini):
-        curr_terminus = all_termini[terminus_idx]
+    while terminus_idx < len(termini):
+        curr_terminus = termini[terminus_idx]
         if curr_terminus[0] != prev_chrom or curr_terminus[1] > prev_end:
             # New terminus cluster:
             prev_chrom = curr_terminus[0]
@@ -619,9 +652,7 @@ def filter_on_shared_termini(events):
         prev_terminus = curr_terminus
         terminus_idx += 1
 
-    filtered_events = filter(lambda event: not event in events_with_overlaps,
-                             events)
-    return filtered_events
+    return events_with_overlaps
 
 
 def detect_clusters(reads):

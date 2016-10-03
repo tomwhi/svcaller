@@ -73,10 +73,10 @@ def cluster_filter_inner(output_bam, input_bam):
 @click.command()
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.option('--fasta-filename', type=str, required=True)
-@click.option('--events-gff', type=str, default = "events.gff", required=False)
+@click.option('--events-gtf', type=str, default = "events.gft", required=False)
 @click.pass_context
-def call_events_cmd(ctx, input_bam, fasta_filename, events_gff):
-    events_outfile = open(events_gff, 'w')
+def call_events_cmd(ctx, input_bam, fasta_filename, events_gtf):
+    events_outfile = open(events_gtf, 'w')
     call_events_inner(input_bam, fasta_filename, events_outfile)
 
 
@@ -90,7 +90,10 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff):
     events = list(call_events(filtered_reads, fasta_filename))
 
     # Filter on discordant read support depth:
-    filtered_events = filter(lambda event: (len(event._terminus1_reads) > 5 and len(event._terminus2_reads) > 5), events)
+    filtered_events = filter(lambda event: (len(event._terminus1_reads) > 2 and len(event._terminus2_reads) > 2), events)
+
+    # Filter on maximum quality of terminus reads:
+    filtered_events = filter(lambda event: (event.get_t1_mapqual() > 20 and event.get_t2_mapqual() > 20), filtered_events)
 
     # Filter on event terminus sharing (exclude any events that have
     # overlapping termini):
