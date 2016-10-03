@@ -362,7 +362,7 @@ class GenomicEvent:
         return mapqual
 
     def get_t2_mapqual(self):
-        return max(map(lambda read: read.mapq, self._terminus1_reads))
+        return max(map(lambda read: read.mapq, self._terminus2_reads))
 
     def has_soft_clip_support(self):
         return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t2) > 0

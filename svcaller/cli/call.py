@@ -93,7 +93,7 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff):
     filtered_events = filter(lambda event: (len(event._terminus1_reads) > 2 and len(event._terminus2_reads) > 2), events)
 
     # Filter on maximum quality of terminus reads:
-    filtered_events = filter(lambda event: (event.get_t1_mapqual() > 20 and event.get_t2_mapqual() > 20), filtered_events)
+    filtered_events = filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19), filtered_events)
 
     # Filter on event terminus sharing (exclude any events that have
     # overlapping termini):
