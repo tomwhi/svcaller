@@ -74,13 +74,14 @@ def cluster_filter_inner(output_bam, input_bam):
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.option('--fasta-filename', type=str, required=True)
 @click.option('--events-gtf', type=str, default = "events.gft", required=False)
+@click.option('--event-overlap-filter', default = True)
 @click.pass_context
-def call_events_cmd(ctx, input_bam, fasta_filename, events_gtf):
+def call_events_cmd(ctx, input_bam, fasta_filename, events_gtf, event_overlap_filter):
     events_outfile = open(events_gtf, 'w')
-    call_events_inner(input_bam, fasta_filename, events_outfile)
+    call_events_inner(input_bam, fasta_filename, events_outfile, event_overlap_filter)
 
 
-def call_events_inner(filtered_bam, fasta_filename, events_gff):
+def call_events_inner(filtered_bam, fasta_filename, events_gff, event_overlap_filter):
     logging.info("Calling events on file {}:".format(filtered_bam))
 
     samfile = pysam.AlignmentFile(filtered_bam, "rb")
@@ -90,14 +91,15 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff):
     events = list(call_events(filtered_reads, fasta_filename))
 
     # Filter on discordant read support depth:
-    filtered_events = filter(lambda event: (len(event._terminus1_reads) > 2 and len(event._terminus2_reads) > 2), events)
+    filtered_events = filter(lambda event: (len(event._terminus1_reads) >= 3 and len(event._terminus2_reads) >= 3), events)
 
     # Filter on maximum quality of terminus reads:
     filtered_events = filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19), filtered_events)
 
-    # Filter on event terminus sharing (exclude any events that have
-    # overlapping termini):
-    filtered_events = filter_on_shared_termini(filtered_events)
+    if event_overlap_filter:
+        # Filter on event terminus sharing (exclude any events that have
+        # overlapping termini):
+        filtered_events = filter_on_shared_termini(filtered_events)
 
     # Filter on soft-clipping support:
     filtered_events = filter(lambda event: event.has_soft_clip_support(), filtered_events)

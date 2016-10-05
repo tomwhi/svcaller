@@ -491,15 +491,22 @@ def define_events(clusters, read2cluster, read2mate):
             curr_cluster2_reads = filter(lambda read: read2cluster[read2mate[read]] == cluster,
                                          paired_cluster.get_reads())
 
-            if reduce(lambda bool1, bool2: bool1 and bool2,
-                      [not read in reads_already_assigned for read in curr_cluster1_reads]) and \
-               reduce(lambda bool1, bool2: bool1 and bool2,
-                      [not read in reads_already_assigned for read in curr_cluster2_reads]):
+            clust1_reads_not_assigned = reduce(lambda bool1, bool2: bool1 and bool2,
+                [not read in reads_already_assigned for read in curr_cluster1_reads])
+            clust2_reads_not_assigned = reduce(lambda bool1, bool2: bool1 and bool2,
+                [not read in reads_already_assigned for read in curr_cluster2_reads])
+
+            if clust1_reads_not_assigned and clust2_reads_not_assigned:
                # None of these reads have been assigned to an event. Assign them to a new
                # event:
                curr_event = GenomicEvent(curr_cluster1_reads, curr_cluster2_reads)
                events.add(curr_event)
                reads_already_assigned = reads_already_assigned.union(curr_cluster1_reads).union(curr_cluster2_reads)
+
+
+#    if 66930405 in map(lambda cluster: min(map(lambda read: read.pos, cluster._reads)), clusters):
+#        pdb.set_trace()
+#        dummy = 1
 
     return events
 
@@ -513,6 +520,10 @@ def call_events(filtered_reads, fasta_filename):
 
     # Pair up the clusters:
     (read2cluster, read2mate) = pair_clusters(clusters)
+
+#        if read.qname.split(":")[-1] == "49460":
+#            pdb.set_trace()
+#            dummy = 1
 
     # Define the events, using those pairings:
     putative_events = define_events(clusters, read2cluster, read2mate)
@@ -666,15 +677,19 @@ def detect_clusters(reads):
     return clusters
 
 
-def detect_clusters_single_strand(clusters, reads):
+def detect_clusters_single_strand(clusters, reads, prev_read_extn=0):
     prev_read_chrom = None
     prev_read_end_pos = 0
     curr_cluster = None
 
     for read in reads:
+#        if read.qname.split(":")[-1] == "8107" and read.rname == 22:
+#            pdb.set_trace()
+#            dummy = 1
         # Detect if the read is on a different chromosome, or if it does not
         # overlap the previous read
-        if read.rname != prev_read_chrom or read.pos > prev_read_end_pos:
+        if read.rname != prev_read_chrom or \
+            read.pos > (prev_read_end_pos + prev_read_extn):
             # Start a new cluster:
             curr_cluster = ReadCluster()
             clusters.add(curr_cluster)
