@@ -350,9 +350,29 @@ def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
 
 
 class GenomicEvent:
-    def __init__(self, terminus1_reads, terminus2_reads):
-        self._terminus1_reads = terminus1_reads
-        self._terminus2_reads = terminus2_reads
+    def __init__(self, terminusA_reads, terminusB_reads):
+        # Set the event termini with terminus 1 as the first terminus
+        # and terminus 2 as the second as determined by chromosomal
+        # numbering/position:
+        terminusA_chrom = terminusA_reads[0].rname
+        terminusA_pos = min(map(lambda read: read.pos, terminusA_reads))
+
+        terminusB_chrom = terminusB_reads[0].rname
+        terminusB_pos = min(map(lambda read: read.pos, terminusB_reads))
+
+        if terminusA_chrom < terminusB_chrom:
+            self._terminus1_reads = terminusA_reads
+            self._terminus2_reads = terminusB_reads
+        elif terminusA_chrom > terminusB_chrom:
+            self._terminus1_reads = terminusB_reads
+            self._terminus2_reads = terminusA_reads
+        else:
+            if terminusA_pos < terminusB_pos:
+                self._terminus1_reads = terminusA_reads
+                self._terminus2_reads = terminusB_reads
+            else:
+                self._terminus1_reads = terminusB_reads
+                self._terminus2_reads = terminusA_reads
 
         self._matched_softclips_t1 = []
         self._matched_softclips_t2 = []
