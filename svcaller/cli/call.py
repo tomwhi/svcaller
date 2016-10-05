@@ -74,14 +74,14 @@ def cluster_filter_inner(output_bam, input_bam):
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.option('--fasta-filename', type=str, required=True)
 @click.option('--events-gtf', type=str, default = "events.gft", required=False)
-@click.option('--event-overlap-filter', default = True)
+@click.option('--filter-event-overlap', is_flag = True)
 @click.pass_context
-def call_events_cmd(ctx, input_bam, fasta_filename, events_gtf, event_overlap_filter):
+def call_events_cmd(ctx, input_bam, fasta_filename, events_gtf, filter_event_overlap):
     events_outfile = open(events_gtf, 'w')
-    call_events_inner(input_bam, fasta_filename, events_outfile, event_overlap_filter)
+    call_events_inner(input_bam, fasta_filename, events_outfile, filter_event_overlap)
 
 
-def call_events_inner(filtered_bam, fasta_filename, events_gff, event_overlap_filter):
+def call_events_inner(filtered_bam, fasta_filename, events_gff, filter_event_overlap):
     logging.info("Calling events on file {}:".format(filtered_bam))
 
     samfile = pysam.AlignmentFile(filtered_bam, "rb")
@@ -96,7 +96,7 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, event_overlap_fi
     # Filter on maximum quality of terminus reads:
     filtered_events = filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19), filtered_events)
 
-    if event_overlap_filter:
+    if filter_event_overlap:
         # Filter on event terminus sharing (exclude any events that have
         # overlapping termini):
         filtered_events = filter_on_shared_termini(filtered_events)
