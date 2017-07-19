@@ -1,5 +1,4 @@
-import logging
-import os, pdb
+import logging, sys
 
 import click
 import pysam
@@ -73,7 +72,7 @@ def cluster_filter_inner(output_bam, input_bam):
 @click.command()
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.option('--fasta-filename', type=str, required=True)
-@click.option('--events-gtf', type=str, default = "events.gft", required=False)
+@click.option('--events-gtf', type=str, default = "events.gtf", required=False)
 @click.option('--filter-event-overlap', is_flag = True)
 @click.pass_context
 def call_events_cmd(ctx, input_bam, fasta_filename, events_gtf, filter_event_overlap):
@@ -91,10 +90,10 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, filter_event_ove
     events = list(call_events(filtered_reads, fasta_filename))
 
     # Filter on discordant read support depth:
-    filtered_events = filter(lambda event: (len(event._terminus1_reads) >= 3 and len(event._terminus2_reads) >= 3), events)
+    filtered_events = list(filter(lambda event: (len(event._terminus1_reads) >= 3 and len(event._terminus2_reads) >= 3), events))
 
     # Filter on maximum quality of terminus reads:
-    filtered_events = filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19), filtered_events)
+    filtered_events = list(filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19), filtered_events))
 
     if filter_event_overlap:
         # Filter on event terminus sharing (exclude any events that have
@@ -102,10 +101,10 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, filter_event_ove
         filtered_events = filter_on_shared_termini(filtered_events)
 
     # Filter on soft-clipping support:
-    filtered_events = filter(lambda event: event.has_soft_clip_support(), filtered_events)
+    filtered_events = list(filter(lambda event: event.has_soft_clip_support(), filtered_events))
 
     # Print them out:
     for event in filtered_events:
-        print >> events_gff, event.get_gtf()
+        print(event.get_gtf(), file=events_gff)
 
     events_gff.close()

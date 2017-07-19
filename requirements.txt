@@ -1,6 +1,7 @@
 click
-pysam
-pybedtools
-swalign
+future
 numpy
 pandas
+pybedtools
+pysam
+swalign

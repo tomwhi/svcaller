@@ -1,8 +1,7 @@
 # coding=utf-8
 from datetime import datetime
-import pdb, sys
-import pysam
-import softclip
+import functools, logging, sys
+import svcaller.cli.calling.softclip as softclip
 
 DEL = "DEL"
 INV = "INV"
@@ -102,6 +101,9 @@ def clust_filt(read_iter, samfile, chrom_of_interest=22):
         other_read_chrom = read.rnext
         other_read_pos = read.pnext
 
+        # PROBLEM: This is a hack making the analysis focused on the X-chromosome.
+        # Need to revisit the problem and figure out a more general solution.
+
         if base_read_chrom == 22:
             base_read_chrom = read.rnext
             base_read_pos = read.pnext
@@ -119,7 +121,7 @@ def clust_filt(read_iter, samfile, chrom_of_interest=22):
 
             reads_nearby_dict = {}
             for curr_read in reads_nearby_non_unique:
-                if not reads_nearby_dict.has_key(curr_read.qname):
+                if not curr_read.qname in reads_nearby_dict:
                     reads_nearby_dict[curr_read.qname] = curr_read
 
             reads_nearby = reads_nearby_dict.values()
@@ -132,19 +134,18 @@ def clust_filt(read_iter, samfile, chrom_of_interest=22):
                    other_read_pos+half_read_len+1000 > read_nearby.pnext+half_read_len:
                     paired_matches += 1
 
-#            if read.qname == "HWI-D00410:258:HTFWFBCXX:1:1210:10002:56665":
+            #            if read.qname == "HWI-D00410:258:HTFWFBCXX:1:1210:10002:56665":
 #                pdb.set_trace()
 #                dummy2 = 1
 
             if paired_matches >= 2:
                 filtered_reads.append(read)
 
-        except Exception, e:
-            #print >> sys.stderr, e
+        except Exception:
             pass
 
         if idx % 1000 == 0:
-            print >> sys.stderr, idx
+            print(idx, file=sys.stderr)
         idx += 1
 
     # Finally, filter to only retain reads where both reads in the pair are
@@ -157,13 +158,13 @@ def paired_filt(reads):
     in the input list.'''
 
     readname2reads = get_readname2reads(reads)
-    return filter(lambda read: len(readname2reads[read.qname]) == 2, reads)
+    return [read for read in reads if len(readname2reads[read.qname]) == 2]
 
 
 def get_readname2reads(reads):
     readname2reads = {}
     for read in reads:
-        if not readname2reads.has_key(read.qname):
+        if not read.qname in readname2reads:
             readname2reads[read.qname] = []
         readname2reads[read.qname].append(read)
 
@@ -193,7 +194,7 @@ def pair_clusters(clusters):
     read2mate = {}
     for read in reads:
         all_reads_with_this_name = readname2reads[read.qname]
-        other_reads = filter(lambda curr_read: curr_read != read, all_reads_with_this_name)
+        other_reads = list(filter(lambda curr_read: curr_read != read, all_reads_with_this_name))
         assert len(other_reads) == 1
         read2mate[read] = other_reads[0]
 
@@ -239,7 +240,7 @@ class SoftClipping:
             self._chrom = pos_tup[0]
             self._start = pos_tup[1]
             self._end = pos_tup[2]
-            print >> sys.stderr, pos_tup
+            print(pos_tup, file=sys.stderr)
 
         # Sequence alignment-based approach:
         return pos_tup != None
@@ -252,19 +253,19 @@ def get_soft_clippings(read):
     cigar_softclip_lengths = []
     dist_to_softclipped = 0
     if read.cigartuples != None:
-        cigar_softclip_lengths = map(lambda tup: tup[1], filter(lambda tup: tup[0] == 4, read.cigartuples))
+        cigar_softclip_lengths = list(map(lambda tup: tup[1], list(filter(lambda tup: tup[0] == 4, read.cigartuples))))
 
         # Calculate displacement of the softclipped region from the start of the *sequence*:
         if len(cigar_softclip_lengths) > 0:
             # This is completely retarded but oh well.
             idxs = range(len(read.cigartuples))
-            arr = filter(lambda idx: map(lambda tup: tup[0] == 4, read.cigartuples)[idx], idxs)
+            arr = list(filter(lambda idx: list(map(lambda tup: tup[0] == 4, read.cigartuples))[idx], idxs))
             first_softclip_idx = arr[0]
             before_softclip_tups = read.cigartuples[:first_softclip_idx]
-            dist_to_softclipped = sum(map(lambda tup: tup[1], before_softclip_tups))
+            dist_to_softclipped = sum(list(map(lambda tup: tup[1], before_softclip_tups)))
 
-    softclip_starts = map(lambda tup: tuple(tup[1].split(",")[:2]), \
-        filter(lambda tag: tag[0] == "SA", read.get_tags()))
+    softclip_starts = list(map(lambda tup: tuple(tup[1].split(",")[:2]), \
+        list(filter(lambda tag: tag[0] == "SA", read.get_tags()))))
 
     # FIXME: Not sure what the data will be like. Soft-clippings do not
     # always have secondary alignments, so it may not be straightforward
@@ -310,8 +311,8 @@ def condense_soft_clippings(soft_clippings):
         # are overlapping. I should eventually change this to accommodate distinct
         # soft clipping supports.
         chrom = soft_clippings[0].get_chrom()
-        start = min(map(lambda soft_clipping: soft_clipping.get_start(), soft_clippings))
-        end = max(map(lambda soft_clipping: soft_clipping.get_end(), soft_clippings))
+        start = min(list(map(lambda soft_clipping: soft_clipping.get_start(), soft_clippings)))
+        end = max(list(map(lambda soft_clipping: soft_clipping.get_end(), soft_clippings)))
 
         return [(chrom, start, end)]
     else:
@@ -326,8 +327,8 @@ def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
     # If there are many no-call (phred score == 2) reads in all the reads, then
     # simply return that the read has no useable matching softclipping
     # sequence:
-    poor_qual_bp = len(filter(lambda qual: qual == 2, reduce(lambda l1, l2: l1 + l2, map(lambda read: read.query_qualities, reads2))))
-    total_bp = len(reduce(lambda l1, l2: l1 + l2, map(lambda read: read.query_qualities, reads2)))
+    poor_qual_bp = len(list(filter(lambda qual: qual == 2, functools.reduce(lambda l1, l2: l1 + l2, list(map(lambda read: read.query_qualities, reads2))))))
+    total_bp = len(functools.reduce(lambda l1, l2: l1 + l2, list(map(lambda read: read.query_qualities, reads2))))
     if poor_qual_bp/float(total_bp) > 0.2:
         return []
 
@@ -355,10 +356,10 @@ class GenomicEvent:
         # and terminus 2 as the second as determined by chromosomal
         # numbering/position:
         terminusA_chrom = terminusA_reads[0].rname
-        terminusA_pos = min(map(lambda read: read.pos, terminusA_reads))
+        terminusA_pos = min(list(map(lambda read: read.pos, terminusA_reads)))
 
         terminusB_chrom = terminusB_reads[0].rname
-        terminusB_pos = min(map(lambda read: read.pos, terminusB_reads))
+        terminusB_pos = min(list(map(lambda read: read.pos, terminusB_reads)))
 
         if terminusA_chrom < terminusB_chrom:
             self._terminus1_reads = terminusA_reads
@@ -378,11 +379,11 @@ class GenomicEvent:
         self._matched_softclips_t2 = []
 
     def get_t1_mapqual(self):
-        mapqual = max(map(lambda read: read.mapq, self._terminus1_reads))
+        mapqual = max(list(map(lambda read: read.mapq, self._terminus1_reads)))
         return mapqual
 
     def get_t2_mapqual(self):
-        return max(map(lambda read: read.mapq, self._terminus2_reads))
+        return max(list(map(lambda read: read.mapq, self._terminus2_reads)))
 
     def has_soft_clip_support(self):
         return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t2) > 0
@@ -407,8 +408,8 @@ class GenomicEvent:
             assert read.rname == reads_chrom
             assert curr_strand == reads_strand
 
-        reads_start = min(map(lambda read: read.pos, reads))
-        reads_end = max(map(lambda read: read.pos+read.qlen, reads))
+        reads_start = min(list(map(lambda read: read.pos, reads)))
+        reads_end = max(list(map(lambda read: read.pos+read.qlen, reads)))
 
         # FIXME: Hard-coding an extension value here. Make this a command-line
         # parameter instead:
@@ -418,7 +419,7 @@ class GenomicEvent:
         return (chrom, start, end, reads_strand)
 
     def test_soft_clipping(self, fasta_filename):
-    	'''Look at the soft-clipping for reads in terminus 1, and see if they match the
+        '''Look at the soft-clipping for reads in terminus 1, and see if they match the
     	position of reads in terminus 2. Then, do the reverse. Record the result'''
 
         # NOTE: Extend the event termini for the purpose of testing for
@@ -442,12 +443,12 @@ class GenomicEvent:
 
     def get_gtf(self):
         t1_chrom = self._terminus1_reads[0].rname
-        t1_first_read_start = min(map(lambda read: read.pos, list(self._terminus1_reads)))
-        t1_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads)))
+        t1_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus1_reads))))
+        t1_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads))))
 
         t2_chrom = self._terminus2_reads[0].rname
-        t2_first_read_start = min(map(lambda read: read.pos, list(self._terminus2_reads)))
-        t2_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads)))
+        t2_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus2_reads))))
+        t2_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads))))
 
         # Temporary code for printing genomic events in gff format...
         t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
@@ -463,12 +464,12 @@ class GenomicEvent:
     # Hack: Generate an event-name based on the coordinates:
     def get_event_name(self):
         t1_chrom = self._terminus1_reads[0].rname
-        t1_first_read_start = min(map(lambda read: read.pos, list(self._terminus1_reads)))
-        t1_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads)))
+        t1_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus1_reads))))
+        t1_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads))))
 
         t2_chrom = self._terminus2_reads[0].rname
-        t2_first_read_start = min(map(lambda read: read.pos, list(self._terminus2_reads)))
-        t2_last_read_end = max(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads)))
+        t2_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus2_reads))))
+        t2_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads))))
 
         return chrom_int2str(t1_chrom) + ":" + str(t1_first_read_start) + "-" + str(t1_last_read_end) + \
           "," + chrom_int2str(t2_chrom) + ":" + str(t2_first_read_start) + "-" + str(t2_last_read_end)
@@ -506,14 +507,14 @@ def define_events(clusters, read2cluster, read2mate):
 
     for cluster in clusters:
         for paired_cluster in cluster.get_paired_clusters():
-            curr_cluster1_reads = filter(lambda read: read2cluster[read2mate[read]] == paired_cluster,
-                                         cluster.get_reads())
-            curr_cluster2_reads = filter(lambda read: read2cluster[read2mate[read]] == cluster,
-                                         paired_cluster.get_reads())
+            curr_cluster1_reads = list(filter(lambda read: read2cluster[read2mate[read]] == paired_cluster,
+                                         cluster.get_reads()))
+            curr_cluster2_reads = list(filter(lambda read: read2cluster[read2mate[read]] == cluster,
+                                         paired_cluster.get_reads()))
 
-            clust1_reads_not_assigned = reduce(lambda bool1, bool2: bool1 and bool2,
+            clust1_reads_not_assigned = functools.reduce(lambda bool1, bool2: bool1 and bool2,
                 [not read in reads_already_assigned for read in curr_cluster1_reads])
-            clust2_reads_not_assigned = reduce(lambda bool1, bool2: bool1 and bool2,
+            clust2_reads_not_assigned = functools.reduce(lambda bool1, bool2: bool1 and bool2,
                 [not read in reads_already_assigned for read in curr_cluster2_reads])
 
             if clust1_reads_not_assigned and clust2_reads_not_assigned:
@@ -550,7 +551,7 @@ def call_events(filtered_reads, fasta_filename):
 
     # Mark each putative event with soft-clipping information of the reads contained in it:
     for event in putative_events:
-    	event.test_soft_clipping(fasta_filename)
+        event.test_soft_clipping(fasta_filename)
 
     return putative_events
 
@@ -596,9 +597,9 @@ class ReadCluster:
         for read in read_list:
             assert read.rname == first_read_chrom
 
-        first_read_start = min(map(lambda read: read.pos, read_list))
+        first_read_start = min(list(map(lambda read: read.pos, read_list)))
 
-        last_read_end = max(map(lambda read: read.pos+read.qlen, read_list))
+        last_read_end = max(list(map(lambda read: read.pos+read.qlen, read_list)))
 
         return "%s\t%d\t%d" % (chrom_int2str(first_read_chrom), first_read_start, last_read_end)
 
@@ -622,30 +623,53 @@ def cmp_coords(coords1, coords2):
                 return 0
 
 
+class CoordKey(object):
+    def __init__(self, obj, *args):
+        self.obj = obj
+
+    def __lt__(self, other):
+        return cmp_coords(self.obj, other.obj) < 0
+
+    def __gt__(self, other):
+        return cmp_coords(self.obj, other.obj) > 0
+
+    def __eq__(self, other):
+        return cmp_coords(self.obj, other.obj) == 0
+
+    def __le__(self, other):
+        return cmp_coords(self.obj, other.obj) <= 0
+
+    def __ge__(self, other):
+        return cmp_coords(self.obj, other.obj) >= 0
+
+    def __ne__(self, other):
+        return cmp_coords(self.obj, other.obj) != 0
+
+
 def filter_on_shared_termini(events):
     # Get dictionary of events for each span (should almost always be one
     # event per span, as a span is a (chrom, start, end, strand) tuple):
     terminus_span_to_events = {}
     for event in events:
         terminus1_span = event.get_terminus1_span()
-        if not terminus_span_to_events.has_key(terminus1_span):
+        if not terminus1_span in terminus_span_to_events:
             terminus_span_to_events[terminus1_span] = []
         terminus_span_to_events[terminus1_span].append(event)
 
         terminus2_span = event.get_terminus2_span()
-        if not terminus_span_to_events.has_key(terminus2_span):
+        if not terminus2_span in terminus_span_to_events:
             terminus_span_to_events[terminus2_span] = []
         terminus_span_to_events[terminus2_span].append(event)
 
-    all_termini = terminus_span_to_events.keys()
-    all_termini.sort(cmp_coords)
+    all_termini = list(terminus_span_to_events.keys())
+    all_termini.sort(key=CoordKey)
 
     # Scan over the events in ascending order, and find any sequential
     # overlapping termini. Record all events that have one or more
     # overlapping termini:
     events_with_overlaps = set()
-    plus_strand_termini = filter(lambda tup: tup[-1] == "+", all_termini)
-    minus_strand_termini = filter(lambda tup: tup[-1] == "-", all_termini)
+    plus_strand_termini = [tup for tup in all_termini if tup[-1] == "+"]
+    minus_strand_termini = [tup for tup in all_termini if tup[-1] == "-"]
     events_with_plus_strand_overlaps = \
         find_terminus_overlaps(plus_strand_termini, terminus_span_to_events)
     events_with_minus_strand_overlaps = \
@@ -654,8 +678,8 @@ def filter_on_shared_termini(events):
     events_with_overlaps = \
         events_with_plus_strand_overlaps.union(events_with_minus_strand_overlaps)
 
-    filtered_events = filter(lambda event: not event in events_with_overlaps,
-                             events)
+    filtered_events = list(filter(lambda event: not event in events_with_overlaps,
+                             events))
 
     return filtered_events
 
@@ -689,8 +713,8 @@ def find_terminus_overlaps(termini, terminus_span_to_events):
 def detect_clusters(reads):
     clusters = set()
 
-    plus_strand_reads = filter(lambda read: not(read.flag & 16), reads)
-    minus_strand_reads = filter(lambda read: read.flag & 16, reads)
+    plus_strand_reads = list(filter(lambda read: not(read.flag & 16), reads))
+    minus_strand_reads = list(filter(lambda read: read.flag & 16, reads))
     detect_clusters_single_strand(clusters, plus_strand_reads)
     detect_clusters_single_strand(clusters, minus_strand_reads)
 
