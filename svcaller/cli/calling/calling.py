@@ -67,7 +67,7 @@ def inv_filt(filtered_reads, read):
 
 
 def tra_filt(filtered_reads, read):
-    # Select reads facing in the same direction, on the same chromosome:
+    # Select reads located on distinct chromosomes:
     if (read.rname != read.rnext):
         filtered_reads.append(read)
 
