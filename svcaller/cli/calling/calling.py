@@ -92,16 +92,13 @@ def inv_filt(filtered_reads, read):
                 filtered_reads.append(read)
 
 
-def tra_filt(filtered_reads, read):
-    # Filter on mapping quality specifically for TRA events, which are prone to
-    # mapping artefacts:
-#    import pdb; pdb.set_trace()
-#    dummy = 1
-    #    if read.
-
-    # Select reads located on distinct chromosomes:
-    if (read.rname != read.rnext):
-        filtered_reads.append(read)
+def tra_filt(filtered_reads, read, min_map_qual = 50):
+    # First, filter on mapping quality specifically for TRA events, which are
+    # prone to mapping artefacts:
+    if read.mapping_quality >= min_map_qual and read.get_tag("MQ") >= min_map_qual:
+        # Select reads located on distinct chromosomes:
+        if (read.rname != read.rnext):
+            filtered_reads.append(read)
 
 
 # FIXME: Quick hack:
