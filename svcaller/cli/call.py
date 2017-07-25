@@ -3,7 +3,8 @@ import logging, sys
 import click
 import pysam
 
-from svcaller.cli.calling.calling import event_filt, clust_filt, call_events, filter_on_shared_termini, chrom_int2str
+from svcaller.cli.calling.calling import event_filt, clust_filt, call_events, \
+    filter_on_shared_termini, chrom_int2str, event_termini_spaced_broadly
 from svcaller.cli.calling.calling import DEL, INV, TRA, DUP
 
 
@@ -177,6 +178,8 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, filter_event_ove
 
     # Filter on maximum quality of terminus reads:
     filtered_events = list(filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19), filtered_events))
+
+    filtered_events = list(filter(lambda event: event_termini_spaced_broadly(event, 2), filtered_events))
 
     if filter_event_overlap:
         # Filter on event terminus sharing (exclude any events that have

@@ -9,6 +9,28 @@ TRA = "TRA"
 DUP = "DUP"
 
 
+def event_termini_spaced_broadly(event, min_dist):
+    """
+    Indicates whether the given event contains reads that are mapped to a
+    broad region, for both termini. This can be used to filter out a
+    particular class of apparent false-positive events (mostly TRA events).
+
+    :param event: An event 
+    :param min_dist: Minimum distance to be spanned by all terminus ends.
+    :return: True if all both termini have reads with start positions spanning the
+    minimum distance, False otherwise.
+    """
+
+    terminusA_start_min = min(list(map(lambda read: read.pos, event._terminus1_reads)))
+    terminusA_start_max = max(list(map(lambda read: read.pos, event._terminus1_reads)))
+
+    terminusB_start_min = min(list(map(lambda read: read.pos, event._terminus2_reads)))
+    terminusB_start_max = max(list(map(lambda read: read.pos, event._terminus2_reads)))
+
+    return (terminusA_start_max - terminusA_start_min) >= min_dist and \
+           (terminusB_start_max - terminusB_start_min) >= min_dist
+
+
 def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
     filtered_reads = []
     for read in read_iter:
@@ -71,6 +93,12 @@ def inv_filt(filtered_reads, read):
 
 
 def tra_filt(filtered_reads, read):
+    # Filter on mapping quality specifically for TRA events, which are prone to
+    # mapping artefacts:
+#    import pdb; pdb.set_trace()
+#    dummy = 1
+    #    if read.
+
     # Select reads located on distinct chromosomes:
     if (read.rname != read.rnext):
         filtered_reads.append(read)
