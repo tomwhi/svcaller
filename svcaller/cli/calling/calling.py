@@ -9,6 +9,71 @@ TRA = "TRA"
 DUP = "DUP"
 
 
+def calc_cigar_bps(cigar_tup):
+    """
+    Calculate the effective number of base-pairs specified by this cigar tuple.
+
+    :param cigar_tup: Cigar code and length
+    :return: Number of base-pairs spanned
+    """
+
+    if cigar_tup[0] == 1:
+        # Insertion
+        return 0
+    elif cigar_tup[0] == 2:
+        # Deletion
+        return 1 * cigar_tup[1]
+    elif cigar_tup[0] == 3:
+        # "N": Not defined for DNA
+        raise Exception("Unexpected 'N' value in cigar.")
+    elif cigar_tup[0] == 4:
+        # Soft-clipping
+        return 1 * cigar_tup[1]
+    elif cigar_tup[0] == 5:
+        # Hard-clipping: Not yet sure how to deal with these instances
+        raise Exception("Unexpected 'H' value in cigar.")
+    elif cigar_tup[0] == 7:
+        # Sequence match
+        return 1 * cigar_tup[1]
+    elif cigar_tup[0] == 7:
+        # Sequence mis-match
+        return 1 * cigar_tup[1]
+
+
+def calculate_genomic_span(read):
+    """
+    Calculate the genomic region spanned by the read, with non-mapping (e.g. soft-clipped)
+    regions factored in.
+
+    :param read: A pysam read
+    :return: A tuple containing read span start and end integer positions
+    """
+
+    cigar = read.cigar
+
+    # Calculate the number of base-pairs to prepend at the start of the alignment
+    # (i.e. at the region preceding the first "matched" region):
+    idx_of_first_match = min([idx for idx in range(len(cigar)) if cigar[idx][0] == 0])
+    cigar_preceding_match = cigar[:idx_of_first_match]
+    bps_to_prepend_list = [calc_cigar_bps(tup) for tup in cigar_preceding_match]
+    bps_to_prepend = 0
+    for bp in bps_to_prepend_list:
+        bps_to_prepend += bp
+
+    idx_of_last_match = max([idx for idx in range(len(cigar)) if cigar[idx][0] == 0])
+    cigar_after_match = cigar[idx_of_last_match + 1:]
+    bps_to_append_list = [calc_cigar_bps(tup) for tup in cigar_after_match]
+    bps_to_append = 0
+    for bp in bps_to_append_list:
+        bps_to_append += bp
+
+    first_match_position = read.pos
+    last_match_position = read.reference_end
+
+    return (first_match_position - bps_to_prepend,
+            last_match_position + bps_to_append)
+
+
 def event_termini_spaced_broadly(event, min_dist):
     """
     Indicates whether the given event contains reads that are mapped to a
@@ -21,14 +86,25 @@ def event_termini_spaced_broadly(event, min_dist):
     minimum distance, False otherwise.
     """
 
-    terminusA_start_min = min(list(map(lambda read: read.pos, event._terminus1_reads)))
-    terminusA_start_max = max(list(map(lambda read: read.pos, event._terminus1_reads)))
+    terminus1_spans = list(map(lambda read: calculate_genomic_span(read), event._terminus1_reads))
+    terminus2_spans = list(map(lambda read: calculate_genomic_span(read), event._terminus2_reads))
 
-    terminusB_start_min = min(list(map(lambda read: read.pos, event._terminus2_reads)))
-    terminusB_start_max = max(list(map(lambda read: read.pos, event._terminus2_reads)))
+    terminus1_start_min = min(list(map(lambda span: span[0], terminus1_spans)))
+    terminus1_start_max = max(list(map(lambda span: span[0], terminus1_spans)))
 
-    return (terminusA_start_max - terminusA_start_min) >= min_dist and \
-           (terminusB_start_max - terminusB_start_min) >= min_dist
+    terminus1_end_min = min(list(map(lambda span: span[0], terminus1_spans)))
+    terminus1_end_max = max(list(map(lambda span: span[0], terminus1_spans)))
+
+    terminus2_start_min = min(list(map(lambda span: span[0], terminus2_spans)))
+    terminus2_start_max = max(list(map(lambda span: span[0], terminus2_spans)))
+
+    terminus2_end_min = min(list(map(lambda span: span[0], terminus2_spans)))
+    terminus2_end_max = max(list(map(lambda span: span[0], terminus2_spans)))
+
+    return (terminus1_start_max - terminus1_start_min) >= min_dist and \
+           (terminus1_end_max - terminus1_end_min) >= min_dist and \
+           (terminus2_start_max - terminus2_start_min) >= min_dist and \
+           (terminus2_end_max - terminus2_end_min) >= min_dist
 
 
 def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
