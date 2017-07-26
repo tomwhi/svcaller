@@ -92,19 +92,19 @@ def event_termini_spaced_broadly(event, min_dist):
     terminus1_start_min = min(list(map(lambda span: span[0], terminus1_spans)))
     terminus1_start_max = max(list(map(lambda span: span[0], terminus1_spans)))
 
-    terminus1_end_min = min(list(map(lambda span: span[0], terminus1_spans)))
-    terminus1_end_max = max(list(map(lambda span: span[0], terminus1_spans)))
+    terminus1_end_min = min(list(map(lambda span: span[1], terminus1_spans)))
+    terminus1_end_max = max(list(map(lambda span: span[1], terminus1_spans)))
 
     terminus2_start_min = min(list(map(lambda span: span[0], terminus2_spans)))
     terminus2_start_max = max(list(map(lambda span: span[0], terminus2_spans)))
 
-    terminus2_end_min = min(list(map(lambda span: span[0], terminus2_spans)))
-    terminus2_end_max = max(list(map(lambda span: span[0], terminus2_spans)))
+    terminus2_end_min = min(list(map(lambda span: span[1], terminus2_spans)))
+    terminus2_end_max = max(list(map(lambda span: span[1], terminus2_spans)))
 
-    return (terminus1_start_max - terminus1_start_min) >= min_dist and \
-           (terminus1_end_max - terminus1_end_min) >= min_dist and \
-           (terminus2_start_max - terminus2_start_min) >= min_dist and \
-           (terminus2_end_max - terminus2_end_min) >= min_dist
+    return (terminus1_start_max - terminus1_start_min) > min_dist and \
+           (terminus1_end_max - terminus1_end_min) > min_dist and \
+           (terminus2_start_max - terminus2_start_min) > min_dist and \
+           (terminus2_end_max - terminus2_end_min) > min_dist
 
 
 def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
