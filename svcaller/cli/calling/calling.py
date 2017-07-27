@@ -74,37 +74,34 @@ def calculate_genomic_span(read):
             last_match_position + bps_to_append)
 
 
-def event_termini_spaced_broadly(event, min_dist):
+def event_termini_spaced_broadly(event):
     """
     Indicates whether the given event contains reads that are mapped to a
     broad region, for both termini. This can be used to filter out a
     particular class of apparent false-positive events (mostly TRA events).
 
     :param event: An event 
-    :param min_dist: Minimum distance to be spanned by all terminus ends.
-    :return: True if all both termini have reads with start positions spanning the
-    minimum distance, False otherwise.
+    :return: False if more than 50% of the read-pairs have at least one terminus
+    where the start positionis identical, True otherwise.
     """
 
     terminus1_spans = list(map(lambda read: calculate_genomic_span(read), event._terminus1_reads))
     terminus2_spans = list(map(lambda read: calculate_genomic_span(read), event._terminus2_reads))
 
-    terminus1_start_min = min(list(map(lambda span: span[0], terminus1_spans)))
-    terminus1_start_max = max(list(map(lambda span: span[0], terminus1_spans)))
+    terminus1_starts = [tup[0] for tup in terminus1_spans]
+    terminus1_start_counts = {start:terminus1_starts.count(start) for start in terminus1_starts}
+    terminus1_ends = [tup[1] for tup in terminus1_spans]
+    terminus1_end_counts = {end:terminus1_ends.count(end) for end in terminus1_ends}
 
-    terminus1_end_min = min(list(map(lambda span: span[1], terminus1_spans)))
-    terminus1_end_max = max(list(map(lambda span: span[1], terminus1_spans)))
+    terminus2_starts = [tup[0] for tup in terminus2_spans]
+    terminus2_start_counts = {start:terminus2_starts.count(start) for start in terminus2_starts}
+    terminus2_ends = [tup[1] for tup in terminus2_spans]
+    terminus2_end_counts = {end:terminus2_ends.count(end) for end in terminus2_ends}
 
-    terminus2_start_min = min(list(map(lambda span: span[0], terminus2_spans)))
-    terminus2_start_max = max(list(map(lambda span: span[0], terminus2_spans)))
-
-    terminus2_end_min = min(list(map(lambda span: span[1], terminus2_spans)))
-    terminus2_end_max = max(list(map(lambda span: span[1], terminus2_spans)))
-
-    return (terminus1_start_max - terminus1_start_min) > min_dist and \
-           (terminus1_end_max - terminus1_end_min) > min_dist and \
-           (terminus2_start_max - terminus2_start_min) > min_dist and \
-           (terminus2_end_max - terminus2_end_min) > min_dist
+    return (max(terminus1_start_counts.values()) <= (len(terminus1_spans)/2.0) and \
+            max(terminus1_end_counts.values()) <= (len(terminus1_spans)/2.0) and \
+            max(terminus2_start_counts.values()) <= (len(terminus2_spans)/2.0) and \
+            max(terminus2_end_counts.values()) <= (len(terminus2_spans)/2.0))
 
 
 def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
@@ -145,14 +142,17 @@ def del_filt(filtered_reads, read):
 
 
 def dup_filt(filtered_reads, read):
-    # Select reads facing away from each other, on the same chromosome:
-    if (read.rname == read.rnext):
-        if not(read.flag & 16) and (read.flag & 32):
-            if read.tlen < 0:
-                filtered_reads.append(read)
-        elif (read.flag & 16) and not(read.flag & 32):
-            if read.tlen > 0:
-                filtered_reads.append(read)
+    # Select reads facing away from each other, on the same chromosome. Impose a
+    # minimum event size to avoid small artefact calls (of currently unknown origin):
+    insert_size_abs = abs(read.tlen)
+    if insert_size_abs > 1000:
+        if (read.rname == read.rnext):
+            if not(read.flag & 16) and (read.flag & 32):
+                if read.tlen < 0:
+                    filtered_reads.append(read)
+            elif (read.flag & 16) and not(read.flag & 32):
+                if read.tlen > 0:
+                    filtered_reads.append(read)
 
 
 def inv_filt(filtered_reads, read):
