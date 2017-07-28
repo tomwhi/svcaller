@@ -174,22 +174,28 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, filter_event_ove
     events = list(call_events(filtered_reads, fasta_filename))
 
     # Filter on discordant read support depth:
+    logging.info("Filtering on discordant read support depth...")
     filtered_events = list(filter(lambda event: (len(event._terminus1_reads) >= 3 and len(event._terminus2_reads) >= 3), events))
 
     # Filter on maximum quality of terminus reads:
+    logging.info("Filtering on max quality of terminus reads...")
     filtered_events = list(filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19), filtered_events))
 
+    logging.info("Filtering on terminus read spacing...")
     filtered_events = list(filter(lambda event: event_termini_spaced_broadly(event), filtered_events))
 
     if filter_event_overlap:
         # Filter on event terminus sharing (exclude any events that have
         # overlapping termini):
+        logging.info("Filtering on terminus event sharing...")
         filtered_events = filter_on_shared_termini(filtered_events)
 
     # Filter on soft-clipping support:
+    logging.info("Filtering on soft-clip support...")
     filtered_events = list(filter(lambda event: event.has_soft_clip_support(), filtered_events))
 
     # Print them out:
+    logging.info("Printing final events...")
     for event in filtered_events:
         print(event.get_gtf(), file=events_gff)
 
