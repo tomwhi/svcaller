@@ -2,6 +2,7 @@
 from datetime import datetime
 import functools, logging, sys
 import svcaller.cli.calling.softclip as softclip
+from collections import defaultdict
 
 DEL = "DEL"
 INV = "INV"
@@ -122,10 +123,6 @@ def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
             else:
                 logging.error("Invalid event_type: " + event_type)
 
-#        if read.qname == "HISEQ:226:HK2GCBCXX:2:2216:5917:85768":
-#            pdb.set_trace()
-#            dummy = 1
-
     return filtered_reads
 
 
@@ -239,10 +236,6 @@ def clust_filt(read_iter, samfile, chrom_of_interest=22):
                    other_read_pos+half_read_len+1000 > read_nearby.pnext+half_read_len:
                     paired_matches += 1
 
-            #            if read.qname == "HWI-D00410:258:HTFWFBCXX:1:1210:10002:56665":
-#                pdb.set_trace()
-#                dummy2 = 1
-
             if paired_matches >= 2:
                 filtered_reads.append(read)
 
@@ -313,11 +306,15 @@ def pair_clusters(clusters):
 
 
 class SoftClipping:
-    def __init__(self, sequence):
+    def __init__(self, sequence, read, origin_chrom, origin_start, origin_end):
         self._chrom = None
         self._start = None
         self._end = None
         self._seq = sequence
+        self._read = read
+        self._origin_chrom = origin_chrom
+        self._origin_start = origin_start
+        self._origin_end = origin_end
 
     def get_chrom(self):
         return self._chrom
@@ -400,17 +397,70 @@ def get_soft_clippings(read):
             else:
                 softclipped_seq_masked += softclipped_seq[idx]
 
+        origin_chrom = chrom_int2str(read.reference_id)
+        if dist_to_softclipped == 0:
+            origin_start = read.pos - cigar_softclip_lengths[0]
+            origin_end = read.pos
+        else:
+            origin_start = read.pos + dist_to_softclipped
+            origin_end = read.pos + dist_to_softclipped + cigar_softclip_lengths[0]
+
         # FIXME: I really need to make sure the exraction of the softclip sequence/above
         # lengths is correct. It's tricky due to the complicated cigar string structure.
         # Currently, just preventing crashes by not creating an object when the sequence
         # is empty (I'm in a hurry to get some initial results!):
         if len(softclipped_seq_masked) > 0:
-            soft_clippings = [SoftClipping(softclipped_seq_masked)]
+            soft_clippings = [SoftClipping(softclipped_seq_masked, read,
+                                           origin_chrom, origin_start, origin_end)]
 
     return soft_clippings
 
 
-def condense_soft_clippings(soft_clippings):
+def group_softclip_coords(terminus_reads):
+    """
+    Group the soft-clipping coordinates according to their start/end points.
+
+    :param soft_clippings: List of terminus reads
+    :return: A list of soft-clippings grouped according to their genomic positions.
+    """
+
+    soft_clippings = functools.reduce(lambda reads1, reads2: reads1 + reads2,
+                                      [get_soft_clippings(read) for read in terminus_reads])
+
+    unique_starts = set([soft_clipping._origin_start for soft_clipping in soft_clippings])
+    unique_ends = set([soft_clipping._origin_end for soft_clipping in soft_clippings])
+
+    # NOTE: Not computationally efficient but small numbers => doesn't matter
+    start_to_soft_clippings = defaultdict(list)
+    for start in unique_starts:
+        for soft_clipping in soft_clippings:
+            if soft_clipping._origin_start == start:
+                start_to_soft_clippings[start].append(soft_clipping)
+
+    end_to_soft_clippings = defaultdict(list)
+    for end in unique_ends:
+        for soft_clipping in soft_clippings:
+            if soft_clipping._origin_end == end:
+                end_to_soft_clippings[end].append(soft_clipping)
+
+        end_to_soft_clippings[end].append(soft_clipping)
+
+    # Assign each soft-clipping to a single start or end group (choose largest
+    # group):
+    start_to_soft_clippings_final = defaultdict(list)
+    end_to_soft_clippings_final = defaultdict(list)
+    for soft_clipping in soft_clippings:
+        start_group = start_to_soft_clippings[soft_clipping._origin_start]
+        end_group = end_to_soft_clippings[soft_clipping._origin_end]
+        if len(start_group) >= len(end_group):
+            start_to_soft_clippings_final[soft_clipping._origin_start].append(soft_clipping)
+        else:
+            end_to_soft_clippings_final[soft_clipping._origin_end].append(soft_clipping)
+
+    return list(start_to_soft_clippings_final.values()) + list(end_to_soft_clippings_final.values())
+
+
+def get_softclip_bounds(soft_clippings):
     if len(soft_clippings) > 0:
         # FIXME: Currently, I will just assume that all soft-clippings in the input
         # are overlapping. I should eventually change this to accommodate distinct
@@ -435,15 +485,12 @@ def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
     poor_qual_bp = len(list(filter(lambda qual: qual == 2, functools.reduce(lambda l1, l2: l1 + l2, list(map(lambda read: read.query_qualities, reads2))))))
     total_bp = len(functools.reduce(lambda l1, l2: l1 + l2, list(map(lambda read: read.query_qualities, reads2))))
     if poor_qual_bp/float(total_bp) > 0.2:
-        return []
+        return (defaultdict(list), defaultdict(list))
 
     # Find all soft-clippings from reads2 that reside in the region spanned
     # by reads in reads1:
     consistent_soft_clippings = []
     for read in reads2:
-#        if read.qname.split(":")[-1] == "87513":
-#            pdb.set_trace()
-#            dummy = 1
         curr_soft_clippings = get_soft_clippings(read)
         for soft_clipping in curr_soft_clippings:
             if soft_clipping.is_in(chrom, start, end, fasta_filename):
@@ -451,7 +498,7 @@ def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
 
     # Derive a set of spatially-distinct, consensus soft-clippings
     # from the above set:
-    consensus_soft_clippings = condense_soft_clippings(consistent_soft_clippings)
+    consensus_soft_clippings = get_softclip_bounds(consistent_soft_clippings)
     return consensus_soft_clippings
 
 
@@ -493,6 +540,16 @@ class GenomicEvent:
     def has_soft_clip_support(self):
         return len(self._matched_softclips_t1) > 0 or len(self._matched_softclips_t2) > 0
 
+    def count_unique_softclip_regions(self):
+        self._softclip_groups_t1 = group_softclip_coords(self._terminus1_reads)
+        self._softclip_groups_t2 = group_softclip_coords(self._terminus2_reads)
+
+    def has_scattered_soft_clip_regions(self):
+        self.count_unique_softclip_regions()
+
+        # Change this once I decide on suitable filtering parameters
+        return True
+
     def get_terminus1_span(self, extension_length=0):
         return self._get_reads_span(self._terminus1_reads, extension_length=extension_length)
 
@@ -532,6 +589,8 @@ class GenomicEvent:
         terminus1_span = self.get_terminus1_span(extension_length=100)
         terminus2_span = self.get_terminus2_span(extension_length=100)
 
+        # XXX CONTINUE HERE: these are now two dictionaries; use them to store the relevant stats for the events,
+        # or in the final filtering stage.
         self._matched_softclips_t1 = test_matched_soft_clipping(\
             terminus1_span[0], terminus1_span[1], terminus1_span[2], \
             self._terminus2_reads, fasta_filename)
@@ -555,14 +614,21 @@ class GenomicEvent:
         t2_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus2_reads))))
         t2_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads))))
 
-        # Temporary code for printing genomic events in gff format...
-        t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
-          (chrom_int2str(t1_chrom), t1_first_read_start, t1_last_read_end, self.get_t1_depth(),
-           self.get_event_name(), self.get_event_name())
+        num_t1_softclip_groups = len(self._softclip_groups_t1)
+        num_t1_softclips_in_groups = functools.reduce(lambda len1, len2: len1 + len2,
+                                                      [len(group) for group in self._softclip_groups_t1])
+        num_t2_softclip_groups = len(self._softclip_groups_t2)
+        num_t2_softclips_in_groups = functools.reduce(lambda len1, len2: len1 + len2,
+                                                      [len(group) for group in self._softclip_groups_t2])
 
-        t2_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
+        # Temporary code for printing genomic events in gff format...
+        t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";#%d %d\n" % \
+          (chrom_int2str(t1_chrom), t1_first_read_start, t1_last_read_end, self.get_t1_depth(),
+           self.get_event_name(), self.get_event_name(), num_t1_softclip_groups, num_t1_softclips_in_groups)
+
+        t2_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";#%d %d\n" % \
           (chrom_int2str(t2_chrom), t2_first_read_start, t2_last_read_end, self.get_t2_depth(),
-           self.get_event_name(), self.get_event_name())
+           self.get_event_name(), self.get_event_name(), num_t2_softclip_groups, num_t2_softclips_in_groups)
 
         return t1_gtf + t2_gtf + self.get_softclip_gtf()
 
@@ -629,11 +695,6 @@ def define_events(clusters, read2cluster, read2mate):
                events.add(curr_event)
                reads_already_assigned = reads_already_assigned.union(curr_cluster1_reads).union(curr_cluster2_reads)
 
-
-#    if 66930405 in map(lambda cluster: min(map(lambda read: read.pos, cluster._reads)), clusters):
-#        pdb.set_trace()
-#        dummy = 1
-
     return events
 
 
@@ -647,10 +708,6 @@ def call_events(filtered_reads, fasta_filename):
     # Pair up the clusters:
     (read2cluster, read2mate) = pair_clusters(clusters)
 
-#        if read.qname.split(":")[-1] == "49460":
-#            pdb.set_trace()
-#            dummy = 1
-
     # Define the events, using those pairings:
     putative_events = define_events(clusters, read2cluster, read2mate)
 
@@ -659,15 +716,6 @@ def call_events(filtered_reads, fasta_filename):
         event.test_soft_clipping(fasta_filename)
 
     return putative_events
-
-    # TMP: PRINTING EVENTS TO A GFFFILE:
-#    header = '''browser position chrX:66761874-66952461
-#browser hide all
-#track name=genomic_events\tdescription="Genomic_events"\tvisibility=2'''
-#    print header
-#
-#    for event in list(putative_events):
-#        print event.to_string()
 
 
 class ReadCluster:
@@ -832,9 +880,6 @@ def detect_clusters_single_strand(clusters, reads, prev_read_extn=0):
     curr_cluster = None
 
     for read in reads:
-#        if read.qname.split(":")[-1] == "8107" and read.rname == 22:
-#            pdb.set_trace()
-#            dummy = 1
         # Detect if the read is on a different chromosome, or if it does not
         # overlap the previous read
         if read.rname != prev_read_chrom or \

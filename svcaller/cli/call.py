@@ -194,6 +194,10 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, filter_event_ove
     logging.info("Filtering on soft-clip support...")
     filtered_events = list(filter(lambda event: event.has_soft_clip_support(), filtered_events))
 
+    # Filter on presence of soft-clipped regions scattered throughout the reads:
+    logging.info("Filtering on scattered soft-clip regions...")
+    filtered_events = list(filter(lambda event: not event.has_scattered_soft_clip_regions(), filtered_events))
+
     # Print them out:
     logging.info("Printing final events...")
     for event in filtered_events:
