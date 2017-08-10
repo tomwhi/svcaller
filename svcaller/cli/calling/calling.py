@@ -548,7 +548,7 @@ class GenomicEvent:
         self.count_unique_softclip_regions()
 
         # Change this once I decide on suitable filtering parameters
-        return True
+        return False
 
     def get_terminus1_span(self, extension_length=0):
         return self._get_reads_span(self._terminus1_reads, extension_length=extension_length)
