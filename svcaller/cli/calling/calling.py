@@ -480,7 +480,7 @@ def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
     poor_qual_bp = len(list(filter(lambda qual: qual == 2, functools.reduce(lambda l1, l2: l1 + l2, list(map(lambda read: read.query_qualities, reads2))))))
     total_bp = len(functools.reduce(lambda l1, l2: l1 + l2, list(map(lambda read: read.query_qualities, reads2))))
     if poor_qual_bp/float(total_bp) > 0.2:
-        return (defaultdict(list), defaultdict(list))
+        return []
 
     # Find all soft-clippings from reads2 that reside in the region spanned
     # by reads in reads1:
@@ -584,8 +584,6 @@ class GenomicEvent:
         terminus1_span = self.get_terminus1_span(extension_length=100)
         terminus2_span = self.get_terminus2_span(extension_length=100)
 
-        # XXX CONTINUE HERE: these are now two dictionaries; use them to store the relevant stats for the events,
-        # or in the final filtering stage.
         self._matched_softclips_t1 = test_matched_soft_clipping(\
             terminus1_span[0], terminus1_span[1], terminus1_span[2], \
             self._terminus2_reads, fasta_filename)
@@ -611,10 +609,12 @@ class GenomicEvent:
 
         num_t1_softclip_groups = len(self._softclip_groups_t1)
         num_t1_softclips_in_groups = functools.reduce(lambda len1, len2: len1 + len2,
-                                                      [len(group) for group in self._softclip_groups_t1])
+                                                      [len(group) for group in self._softclip_groups_t1],
+                                                      0)
         num_t2_softclip_groups = len(self._softclip_groups_t2)
         num_t2_softclips_in_groups = functools.reduce(lambda len1, len2: len1 + len2,
-                                                      [len(group) for group in self._softclip_groups_t2])
+                                                      [len(group) for group in self._softclip_groups_t2],
+                                                      0)
 
         # Temporary code for printing genomic events in gff format...
         t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";#%d %d\n" % \
