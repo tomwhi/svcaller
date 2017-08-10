@@ -141,28 +141,23 @@ def del_filt(filtered_reads, read):
 def dup_filt(filtered_reads, read):
     # Select reads facing away from each other, on the same chromosome. Impose a
     # minimum event size to avoid small artefact calls (of currently unknown origin):
-    insert_size_abs = abs(read.tlen)
-    if insert_size_abs > 1000:
-        if (read.rname == read.rnext):
-            if not(read.flag & 16) and (read.flag & 32):
-                if read.tlen < 0:
-                    filtered_reads.append(read)
-            elif (read.flag & 16) and not(read.flag & 32):
-                if read.tlen > 0:
-                    filtered_reads.append(read)
+    if (read.rname == read.rnext):
+        if not(read.flag & 16) and (read.flag & 32):
+            if read.tlen < 0:
+                filtered_reads.append(read)
+        elif (read.flag & 16) and not(read.flag & 32):
+            if read.tlen > 0:
+                filtered_reads.append(read)
 
 
 def inv_filt(filtered_reads, read):
     # Select reads facing in the same direction, on the same chromosome. Impose a
     # minimum event size to avoid small artefact calls (of currently unknown origin):
-
-    insert_size_abs = abs(read.tlen)
-    if insert_size_abs > 1000:
-        if (read.rname == read.rnext):
-            if not(read.flag & 16) and not(read.flag & 32):
-                filtered_reads.append(read)
-            elif (read.flag & 16) and (read.flag & 32):
-                filtered_reads.append(read)
+    if (read.rname == read.rnext):
+        if not(read.flag & 16) and not(read.flag & 32):
+            filtered_reads.append(read)
+        elif (read.flag & 16) and (read.flag & 32):
+            filtered_reads.append(read)
 
 
 def tra_filt(filtered_reads, read, min_map_qual = 50):
