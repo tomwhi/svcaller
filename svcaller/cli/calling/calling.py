@@ -525,6 +525,9 @@ class GenomicEvent:
         self._matched_softclips_t1 = []
         self._matched_softclips_t2 = []
 
+    def get_num_reads(self):
+        return len(self._terminus1_reads) + len(self._terminus2_reads)
+
     def get_t1_mapqual(self):
         mapqual = max(list(map(lambda read: read.mapq, self._terminus1_reads)))
         return mapqual
@@ -818,13 +821,13 @@ def filter_on_shared_termini(events):
     events_with_overlaps = set()
     plus_strand_termini = [tup for tup in all_termini if tup[-1] == "+"]
     minus_strand_termini = [tup for tup in all_termini if tup[-1] == "-"]
-    events_with_plus_strand_overlaps = \
-        find_terminus_overlaps(plus_strand_termini, terminus_span_to_events)
-    events_with_minus_strand_overlaps = \
-        find_terminus_overlaps(minus_strand_termini, terminus_span_to_events)
+    events_to_remove_plus_strand_overlaps = \
+        find_events_to_remove_from_overlap(plus_strand_termini, terminus_span_to_events)
+    events_to_remove_minus_strand_overlaps = \
+        find_events_to_remove_from_overlap(minus_strand_termini, terminus_span_to_events)
 
     events_with_overlaps = \
-        events_with_plus_strand_overlaps.union(events_with_minus_strand_overlaps)
+        events_to_remove_plus_strand_overlaps.union(events_to_remove_minus_strand_overlaps)
 
     filtered_events = list(filter(lambda event: not event in events_with_overlaps,
                              events))
@@ -832,8 +835,8 @@ def filter_on_shared_termini(events):
     return filtered_events
 
 
-def find_terminus_overlaps(termini, terminus_span_to_events):
-    events_with_overlaps = set()
+def find_events_to_remove_from_overlap(termini, terminus_span_to_events):
+    events_to_remove = set()
     terminus_idx = 0
     prev_chrom = None
     prev_start = -1
@@ -846,16 +849,23 @@ def find_terminus_overlaps(termini, terminus_span_to_events):
             prev_chrom = curr_terminus[0]
             prev_start = curr_terminus[1]
         else:
-            # This terminus overlaps the existing cluster of termini:
-            for event in terminus_span_to_events[curr_terminus]:
-                events_with_overlaps.add(event)
-            for event in terminus_span_to_events[prev_terminus]:
-                events_with_overlaps.add(event)
+            # Identify the largest event for both the shared termini and retain
+            # it; mark all others for removal:
+            curr_overlap_events = set(terminus_span_to_events[curr_terminus]).union(
+                terminus_span_to_events[prev_terminus])
+
+            max_event_size = max([event.get_num_reads() for event in curr_overlap_events])
+            event_to_retain = [event for event in curr_overlap_events if event.get_num_reads() == max_event_size][0]
+
+            for event in curr_overlap_events:
+                if event != event_to_retain:
+                    events_to_remove.add(event)
+
         prev_end = curr_terminus[2]
         prev_terminus = curr_terminus
         terminus_idx += 1
 
-    return events_with_overlaps
+    return events_to_remove
 
 
 def detect_clusters(reads):
