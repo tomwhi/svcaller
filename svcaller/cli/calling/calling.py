@@ -542,11 +542,21 @@ class GenomicEvent:
         self._softclip_groups_t1 = group_softclip_coords(self._terminus1_reads)
         self._softclip_groups_t2 = group_softclip_coords(self._terminus2_reads)
 
-    def has_scattered_soft_clip_regions(self):
+    def has_scattered_soft_clip_regions(self, threshold = 4):
         self.count_unique_softclip_regions()
 
-        # Change this once I decide on suitable filtering parameters
-        return False
+        num_t1_softclip_groups = len(self._softclip_groups_t1)
+        num_t1_softclips_in_groups = functools.reduce(lambda len1, len2: len1 + len2,
+                                                      [len(group) for group in self._softclip_groups_t1],
+                                                      0)
+        num_t2_softclip_groups = len(self._softclip_groups_t2)
+        num_t2_softclips_in_groups = functools.reduce(lambda len1, len2: len1 + len2,
+                                                      [len(group) for group in self._softclip_groups_t2],
+                                                      0)
+
+        ratio = (num_t1_softclips_in_groups + num_t2_softclips_in_groups) \
+                / float((num_t1_softclip_groups + num_t2_softclip_groups))
+        return ratio <= threshold
 
     def get_terminus1_span(self, extension_length=0):
         return self._get_reads_span(self._terminus1_reads, extension_length=extension_length)
@@ -610,23 +620,14 @@ class GenomicEvent:
         t2_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus2_reads))))
         t2_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads))))
 
-        num_t1_softclip_groups = len(self._softclip_groups_t1)
-        num_t1_softclips_in_groups = functools.reduce(lambda len1, len2: len1 + len2,
-                                                      [len(group) for group in self._softclip_groups_t1],
-                                                      0)
-        num_t2_softclip_groups = len(self._softclip_groups_t2)
-        num_t2_softclips_in_groups = functools.reduce(lambda len1, len2: len1 + len2,
-                                                      [len(group) for group in self._softclip_groups_t2],
-                                                      0)
-
         # Temporary code for printing genomic events in gff format...
-        t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";#%d %d\n" % \
+        t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
           (chrom_int2str(t1_chrom), t1_first_read_start, t1_last_read_end, self.get_t1_depth(),
-           self.get_event_name(), self.get_event_name(), num_t1_softclip_groups, num_t1_softclips_in_groups)
+           self.get_event_name(), self.get_event_name())
 
-        t2_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";#%d %d\n" % \
+        t2_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
           (chrom_int2str(t2_chrom), t2_first_read_start, t2_last_read_end, self.get_t2_depth(),
-           self.get_event_name(), self.get_event_name(), num_t2_softclip_groups, num_t2_softclips_in_groups)
+           self.get_event_name(), self.get_event_name())
 
         return t1_gtf + t2_gtf + self.get_softclip_gtf()
 
