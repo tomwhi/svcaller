@@ -155,16 +155,17 @@ def cluster_filter_inner(output_bam, input_bam):
 
 @click.command()
 @click.argument('input-bam', type=click.Path(exists=True))
+@click.argument('event-type', type=click.Choice([DEL, DUP, INV, TRA]))
 @click.option('--fasta-filename', type=str, required=True)
 @click.option('--events-gtf', type=str, default = "events.gtf", required=False)
 @click.option('--filter-event-overlap', is_flag = True)
 @click.pass_context
-def call_events_cmd(ctx, input_bam, fasta_filename, events_gtf, filter_event_overlap):
+def call_events_cmd(ctx, input_bam, event_type, fasta_filename, events_gtf, filter_event_overlap):
     events_outfile = open(events_gtf, 'w')
-    call_events_inner(input_bam, fasta_filename, events_outfile, filter_event_overlap)
+    call_events_inner(input_bam, event_type, fasta_filename, events_outfile, filter_event_overlap)
 
 
-def call_events_inner(filtered_bam, fasta_filename, events_gff, filter_event_overlap):
+def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, filter_event_overlap):
     logging.info("Calling events on file {}:".format(filtered_bam))
 
     samfile = pysam.AlignmentFile(filtered_bam, "rb")
@@ -194,9 +195,11 @@ def call_events_inner(filtered_bam, fasta_filename, events_gff, filter_event_ove
     logging.info("Filtering on soft-clip support...")
     filtered_events = list(filter(lambda event: event.has_soft_clip_support(), filtered_events))
 
-    # Filter on presence of soft-clipped regions scattered throughout the reads:
+    # Optionally filter on presence of soft-clipped regions scattered throughout the reads, depending on
+    # the event type:
     logging.info("Filtering on scattered soft-clip regions...")
-    filtered_events = list(filter(lambda event: not event.has_scattered_soft_clip_regions(), filtered_events))
+    if event_type == DUP or event_type == INV:
+        filtered_events = list(filter(lambda event: not event.has_scattered_soft_clip_regions(), filtered_events))
 
     # Print them out:
     logging.info("Printing final events...")
