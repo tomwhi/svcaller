@@ -213,4 +213,6 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
             for read in event._terminus1_reads + event._terminus2_reads:
                 outf.write(read)
 
+    pysam.index(str(events_bam))
+
     events_gff.close()
