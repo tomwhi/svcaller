@@ -158,14 +158,15 @@ def cluster_filter_inner(output_bam, input_bam):
 @click.argument('event-type', type=click.Choice([DEL, DUP, INV, TRA]))
 @click.option('--fasta-filename', type=str, required=True)
 @click.option('--events-gtf', type=str, default = "events.gtf", required=False)
+@click.option('--events-bam', type=str, default = "events.bam", required=False)
 @click.option('--filter-event-overlap', is_flag = True)
 @click.pass_context
-def call_events_cmd(ctx, input_bam, event_type, fasta_filename, events_gtf, filter_event_overlap):
+def call_events_cmd(ctx, input_bam, event_type, fasta_filename, events_gtf, events_bam, filter_event_overlap):
     events_outfile = open(events_gtf, 'w')
-    call_events_inner(input_bam, event_type, fasta_filename, events_outfile, filter_event_overlap)
+    call_events_inner(input_bam, event_type, fasta_filename, events_outfile, events_bam, filter_event_overlap)
 
 
-def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, filter_event_overlap):
+def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, events_bam, filter_event_overlap):
     logging.info("Calling events on file {}:".format(filtered_bam))
 
     samfile = pysam.AlignmentFile(filtered_bam, "rb")
@@ -205,5 +206,11 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, filt
     logging.info("Printing final events...")
     for event in filtered_events:
         print(event.get_gtf(), file=events_gff)
+
+    # Write to the bam file too:
+    with pysam.AlignmentFile(events_bam, "wb", header=samfile.header) as outf:
+        for event in filtered_events:
+            for read in event._terminus1_reads + event._terminus2_reads:
+                outf.write(read)
 
     events_gff.close()
