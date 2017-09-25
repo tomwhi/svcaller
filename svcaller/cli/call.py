@@ -1,4 +1,4 @@
-import logging, sys
+import logging, tempfile
 
 import click
 import pysam
@@ -160,13 +160,14 @@ def cluster_filter_inner(output_bam, input_bam):
 @click.option('--events-gtf', type=str, default = "events.gtf", required=False)
 @click.option('--events-bam', type=str, default = "events.bam", required=False)
 @click.option('--filter-event-overlap', is_flag = True)
+@click.option('--tmp-dir', type=str, default = "/tmp", required=False)
 @click.pass_context
-def call_events_cmd(ctx, input_bam, event_type, fasta_filename, events_gtf, events_bam, filter_event_overlap):
+def call_events_cmd(ctx, input_bam, event_type, fasta_filename, events_gtf, events_bam, filter_event_overlap, tmp_dir):
     events_outfile = open(events_gtf, 'w')
-    call_events_inner(input_bam, event_type, fasta_filename, events_outfile, events_bam, filter_event_overlap)
+    call_events_inner(input_bam, event_type, fasta_filename, events_outfile, events_bam, filter_event_overlap, tmp_dir)
 
 
-def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, events_bam, filter_event_overlap):
+def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, events_bam, filter_event_overlap, tmp_dir):
     logging.info("Calling events on file {}:".format(filtered_bam))
 
     samfile = pysam.AlignmentFile(filtered_bam, "rb")
@@ -207,12 +208,17 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
     for event in filtered_events:
         print(event.get_gtf(), file=events_gff)
 
-    # Write to the bam file too:
-    with pysam.AlignmentFile(events_bam, "wb", header=samfile.header) as outf:
+    # Write to a temporary bam file, to facilitate subsequent sorting with pysam. NOTE:
+    # Could do sorting in memory since the read count should be low, but it seems less
+    # bug-prone to use pysam's sort functionality:
+    tmp_bam_filename = tempfile.NamedTemporaryFile(prefix="tmp_bamfile_", suffix=".bam", dir=tmp_dir).name
+    with pysam.AlignmentFile(tmp_bam_filename, "wb", header=samfile.header) as outf:
         for event in filtered_events:
             for read in event._terminus1_reads + event._terminus2_reads:
                 outf.write(read)
 
+    # Sort the intermediate bam file with samtools to produce the final output bam file, then index it:
+    pysam.sort("-o", events_bam, tmp_bam_filename)
     pysam.index(str(events_bam))
 
     events_gff.close()
