@@ -1,19 +1,25 @@
 import logging
-import click
-import os
-import pdb
-import sys
 
-from .call import run_all_cmd as run_all
-from .call import event_filter_cmd as event_filter
-from .call import cluster_filter_cmd as cluster_filter
+import click
+
+from svcaller.effect import call_effect
 from .call import call_events_cmd as call
+from .call import cluster_filter_cmd as cluster_filter
+from .call import event_filter_cmd as event_filter
+from .call import run_all_cmd as run_all
 
 
 @click.group()
 @click.option('--loglevel', default='INFO', help='level of logging')
 @click.pass_context
 def base(ctx, loglevel):
+    setup_logging(loglevel)
+
+
+@click.group()
+@click.option('--loglevel', default='INFO', help='level of logging')
+@click.pass_context
+def sveffect(ctx, loglevel):
     setup_logging(loglevel)
 
 
@@ -35,3 +41,5 @@ base.add_command(run_all)
 base.add_command(event_filter)
 base.add_command(cluster_filter)
 base.add_command(call)
+
+sveffect.add_command(call_effect)

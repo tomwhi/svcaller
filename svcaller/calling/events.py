@@ -1,8 +1,10 @@
 # coding=utf-8
-from datetime import datetime
-import functools, logging, sys
-import svcaller.cli.calling.softclip as softclip
+import functools
+import logging
+import sys
 from collections import defaultdict
+
+import svcaller.calling.softclip as softclip
 
 DEL = "DEL"
 INV = "INV"

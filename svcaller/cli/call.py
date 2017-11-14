@@ -1,11 +1,12 @@
-import logging, tempfile
+import logging
+import tempfile
 
 import click
 import pysam
 
-from svcaller.cli.calling.calling import event_filt, clust_filt, call_events, \
+from svcaller.calling.events import DEL, INV, TRA, DUP
+from svcaller.calling.events import event_filt, clust_filt, call_events, \
     filter_on_shared_termini, chrom_int2str, event_termini_spaced_broadly
-from svcaller.cli.calling.calling import DEL, INV, TRA, DUP
 
 
 @click.command()
