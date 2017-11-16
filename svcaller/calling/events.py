@@ -3,13 +3,17 @@ import functools
 import logging
 import sys
 from collections import defaultdict
+from enum import Enum
+
 
 import svcaller.calling.softclip as softclip
 
-DEL = "DEL"
-INV = "INV"
-TRA = "TRA"
-DUP = "DUP"
+
+class SvType(Enum):
+    DEL = "DEL"
+    INV = "INV"
+    TRA = "TRA"
+    DUP = "DUP"
 
 
 def calc_cigar_bps(cigar_tup):
@@ -114,13 +118,13 @@ def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
             # This read passes the general bit-wise filter.
             # Apply the event-specific bit-wise flag field and other field
             # filters:
-            if event_type == DEL:
+            if event_type == SvType.DEL:
                 del_filt(filtered_reads, read)
-            elif event_type == INV:
+            elif event_type == SvType.INV:
                 inv_filt(filtered_reads, read)
-            elif event_type == TRA:
+            elif event_type == SvType.TRA:
                 tra_filt(filtered_reads, read)
-            elif event_type == DUP:
+            elif event_type == SvType.DUP:
                 dup_filt(filtered_reads, read)
             else:
                 logging.error("Invalid event_type: " + event_type)

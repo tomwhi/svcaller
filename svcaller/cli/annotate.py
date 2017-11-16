@@ -1,4 +1,4 @@
-import logging
+import json
 
 import click
 
@@ -14,4 +14,5 @@ from svcaller.effect.consequence import predict_effects
 @click.pass_context
 def predict_effects_cmd(ctx, svs, ts_regions, ar_regions, fusion_regions, effects_filename):
     with open(effects_filename, 'w') as effects_file:
-        predict_effects(svs, ts_regions, ar_regions, fusion_regions, effects_file)
+        effects = predict_effects(svs, ts_regions, ar_regions, fusion_regions)
+        json.dump(effects, effects_file)

@@ -4,13 +4,13 @@ import tempfile
 import click
 import pysam
 
-from svcaller.calling.events import DEL, INV, TRA, DUP
+from svcaller.calling.events import SvType
 from svcaller.calling.events import event_filt, clust_filt, call_events, \
     filter_on_shared_termini, chrom_int2str, event_termini_spaced_broadly
 
 
 @click.command()
-@click.option('--event-type', type=click.Choice([DEL, INV, TRA, DUP]), required=True)
+@click.option('--event-type', type=click.Choice([SvType.DEL, SvType.INV, SvType.TRA, SvType.DUP]), required=True)
 @click.option('--output-name', type=str, default="SV_CallOutput", required=False)
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.pass_context
@@ -29,7 +29,7 @@ def run_all_cmd(ctx, event_type, output_name, input_bam):
 
 
 @click.command()
-@click.option('--event-type', type=click.Choice([DEL, INV, TRA, DUP]), required=True)
+@click.option('--event-type', type=click.Choice([SvType.DEL, SvType.INV, SvType.TRA, SvType.DUP]), required=True)
 @click.option('--output-bam', type=str, default="event_filtered_reads.bam", required=False)
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.pass_context
@@ -156,7 +156,7 @@ def cluster_filter_inner(output_bam, input_bam):
 
 @click.command()
 @click.argument('input-bam', type=click.Path(exists=True))
-@click.argument('event-type', type=click.Choice([DEL, DUP, INV, TRA]))
+@click.argument('event-type', type=click.Choice([SvType.DEL, SvType.DUP, SvType.INV, SvType.TRA]))
 @click.option('--fasta-filename', type=str, required=True)
 @click.option('--events-gtf', type=str, default = "events.gtf", required=False)
 @click.option('--events-bam', type=str, default = "events.bam", required=False)
