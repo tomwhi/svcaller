@@ -12,7 +12,7 @@ class TestConsequenceFunctions(unittest.TestCase):
 2\t1000\t1100\tTRA\t0\t+
 '''
 
-        self.test_svs_df = pd.DataFrame(OrderedDict({
+        self.eg_svs_df = pd.DataFrame(OrderedDict({
             "chrom": [1, 1, 1, 2],
             "start": [1000, 3000, 1500, 1000],
             "end": [1100, 3100, 1600, 1100],
@@ -21,19 +21,55 @@ class TestConsequenceFunctions(unittest.TestCase):
             "strand": ["+", "+", "+", "+"]
         }))
 
-        self.test_regions_df_ts1 = pd.DataFrame(OrderedDict({
+        self.eg_regions_df_ts1 = pd.DataFrame(OrderedDict({
             "chrom": [1, 1],
             "start": [800, 2000],
             "end": [1200, 2100],
             "gene": ["TS1", "TS1"],
         }))
 
-        self.test_bed_content_1 = '''1\t800\t1200\tTS1
+
+        self.eg_svtype_to_table = {
+            "DEL": pd.DataFrame(OrderedDict({
+                "chrom": [1],
+                "start": [1000],
+                "end": [1100],
+                "type": ["DEL"],
+                "score": [0],
+                "strand": ["+"]
+            })),
+            "DUP": pd.DataFrame(OrderedDict({
+                "chrom": [1],
+                "start": [1000],
+                "end": [1100],
+                "type": ["DUP"],
+                "score": [0],
+                "strand": ["+"]
+            })),
+            "INV": pd.DataFrame(OrderedDict({
+                "chrom": [1],
+                "start": [1000],
+                "end": [1100],
+                "type": ["INV"],
+                "score": [0],
+                "strand": ["+"]
+            })),
+            "TRA": pd.DataFrame(OrderedDict({
+                "chrom": [1],
+                "start": [1000],
+                "end": [1100],
+                "type": ["TRA"],
+                "score": [0],
+                "strand": ["+"]
+            })),
+        }
+
+        self.eg_bed_content_1 = '''1\t800\t1200\tTS1
 1\t2000\t2100\tTS1
 2\t2000\t2100\tTS2
 '''
 
-        self.test_bed_content_fusion = '''1\t10000\t20000\tFUSION1
+        self.eg_bed_content_fusion = '''1\t10000\t20000\tFUSION1
 1\t30000\t40000\tFUSION2
 '''
 
@@ -54,14 +90,14 @@ class TestConsequenceFunctions(unittest.TestCase):
 
     def test_sv_in_regions_true(self):
         self.assertTrue(sv_in_regions(
-            self.test_svs_df.iloc[0,:],
-            self.test_regions_df_ts1
+            self.eg_svs_df.iloc[0, :],
+            self.eg_regions_df_ts1
         ))
 
     def test_sv_in_regions_false(self):
         self.assertFalse(sv_in_regions(
-            self.test_svs_df.iloc[1,:],
-            self.test_regions_df_ts1
+            self.eg_svs_df.iloc[1, :],
+            self.eg_regions_df_ts1
         ))
 
     def test_collapse_sv_predictions_1(self):
@@ -81,19 +117,19 @@ class TestConsequenceFunctions(unittest.TestCase):
 
     def test_predict_del_effect_with_effect(self):
         self.assertEquals(
-            predict_del_effect(self.test_svs_df.iloc[0,:], GeneClass.TUMOUR_SUPRESSOR, self.test_regions_df_ts1),
+            predict_del_effect(self.eg_svs_df.iloc[0, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
             SvEffect.OVERLAP_WITH_EFFECT
         )
 
     def test_predict_del_effect_no_effect(self):
         self.assertEquals(
-            predict_del_effect(self.test_svs_df.iloc[1,:], GeneClass.TUMOUR_SUPRESSOR, self.test_regions_df_ts1),
+            predict_del_effect(self.eg_svs_df.iloc[1, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
             SvEffect.NO_OVERLAP
         )
 
     def test_predict_del_effect_unknown_effect(self):
         self.assertEquals(
-            predict_del_effect(self.test_svs_df.iloc[2,:], GeneClass.TUMOUR_SUPRESSOR, self.test_regions_df_ts1),
+            predict_del_effect(self.eg_svs_df.iloc[2, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
             SvEffect.OVERLAP_UNKNOWN_EFFECT
         )
 
@@ -108,18 +144,85 @@ class TestConsequenceFunctions(unittest.TestCase):
             "strand": ["+", "+", "+"]
         }))}
 
-        filtered = filter_svtype_to_table(svtype_to_table, self.test_regions_df_ts1)
+        filtered = filter_svtype_to_table(svtype_to_table, self.eg_regions_df_ts1)
         self.assertIn("DEL", filtered)
         self.assertEquals(2, len(list(filtered.values())[0]))
+
+    @patch('svcaller.effect.consequence.predict_del_effect')
+    @patch('svcaller.effect.consequence.predict_dup_effect')
+    @patch('svcaller.effect.consequence.predict_inv_effect')
+    @patch('svcaller.effect.consequence.predict_tra_effect')
+    def test_predict_svs_gene_effect_1(self, mock_predict_tra_effect, mock_predict_inv_effect,
+                                     mock_predict_dup_effect, mock_predict_del_effect):
+        mock_predict_del_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_dup_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_inv_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_tra_effect.return_value = SvEffect.NO_OVERLAP
+
+        self.assertEquals(
+            predict_svs_gene_effect(self.eg_svtype_to_table, GeneClass.TUMOUR_SUPRESSOR, "Dummy"),
+            SvEffect.NO_OVERLAP
+        )
+
+    @patch('svcaller.effect.consequence.predict_del_effect')
+    @patch('svcaller.effect.consequence.predict_dup_effect')
+    @patch('svcaller.effect.consequence.predict_inv_effect')
+    @patch('svcaller.effect.consequence.predict_tra_effect')
+    def test_predict_svs_gene_effect_2(self, mock_predict_tra_effect, mock_predict_inv_effect,
+                                     mock_predict_dup_effect, mock_predict_del_effect):
+        mock_predict_del_effect.return_value = SvEffect.OVERLAP_UNKNOWN_EFFECT
+        mock_predict_dup_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_inv_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_tra_effect.return_value = SvEffect.NO_OVERLAP
+
+        self.assertEquals(
+            predict_svs_gene_effect(self.eg_svtype_to_table, GeneClass.TUMOUR_SUPRESSOR, "Dummy"),
+            SvEffect.OVERLAP_UNKNOWN_EFFECT
+        )
+
+    @patch('svcaller.effect.consequence.predict_del_effect')
+    @patch('svcaller.effect.consequence.predict_dup_effect')
+    @patch('svcaller.effect.consequence.predict_inv_effect')
+    @patch('svcaller.effect.consequence.predict_tra_effect')
+    def test_predict_svs_gene_effect_3(self, mock_predict_tra_effect, mock_predict_inv_effect,
+                                     mock_predict_dup_effect, mock_predict_del_effect):
+        mock_predict_del_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_dup_effect.return_value = SvEffect.OVERLAP_WITH_EFFECT
+        mock_predict_inv_effect.return_value = SvEffect.OVERLAP_UNKNOWN_EFFECT
+        mock_predict_tra_effect.return_value = SvEffect.NO_OVERLAP
+
+        self.assertEquals(
+            predict_svs_gene_effect(self.eg_svtype_to_table, GeneClass.TUMOUR_SUPRESSOR, "Dummy"),
+            SvEffect.OVERLAP_WITH_EFFECT
+        )
+
+    @patch('svcaller.effect.consequence.predict_svs_gene_effect')
+    @patch('svcaller.effect.consequence.filter_svtype_to_table')
+    def test_predict_svs_effects_for_class(self, mock_filter_svtype_to_table, mock_predict_svs_gene_effect):
+        mock_filter_svtype_to_table.return_value = {}
+        mock_predict_svs_gene_effect.return_value = "Dummy"
+
+        gene_to_table = {
+            "TS1": pd.DataFrame(OrderedDict({
+                "chrom": [1, 1],
+                "start": [800, 2000],
+                "end": [1200, 2100],
+                "gene": ["TS1", "TS1"],
+            }))
+        }
+
+        gene_to_effect = predict_svs_effects_for_class({}, None, gene_to_table)
+
+        self.assertIn("TS1", gene_to_effect)
 
     @patch('svcaller.effect.consequence.predict_svs_effects_for_class')
     def test_predict_effects(self, mock_predict_svs_effects_for_class):
         mock_predict_svs_effects_for_class.return_value = {}
         open_name = '%s.open' % __name__
         with patch(open_name, mock_open(read_data=self.test_svs_content), create=True) as open1, \
-            patch(open_name, mock_open(read_data=self.test_bed_content_1), create=True) as open2, \
-            patch(open_name, mock_open(read_data=self.test_bed_content_1), create=True) as open3, \
-            patch(open_name, mock_open(read_data=self.test_bed_content_fusion), create=True) as open4:
+            patch(open_name, mock_open(read_data=self.eg_bed_content_1), create=True) as open2, \
+            patch(open_name, mock_open(read_data=self.eg_bed_content_1), create=True) as open3, \
+            patch(open_name, mock_open(read_data=self.eg_bed_content_fusion), create=True) as open4:
             with open1("dummy_svs.bed") as test_svs_file, \
                 open2("dummy_ts.bed") as test_ts_file, \
                 open3("dummy_ar.bed") as test_ar_file, \
