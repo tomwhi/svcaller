@@ -52,7 +52,7 @@ def predict_effects(svs_file, ts_file, ar_file, fusion_file):
     gene_class_to_results = {}
     for gene_class, gene_region_bed in gene_class_to_gene_region_bed.items():
         gene_class_to_results[gene_class] = \
-            predict_svs_effect_for_class(svs_tables, gene_class, gene_region_bed)
+            predict_svs_effects_for_class(svs_tables, gene_class, gene_region_bed)
 
     return gene_class_to_results
 
@@ -137,7 +137,7 @@ def predict_svs_gene_effect(svs, gene_class, gene_regions):
     return collapse_sv_predictions(all_svs_effects)
 
 
-def predict_svs_effect_for_class(svs_table, gene_class, gene_to_table):
+def predict_svs_effects_for_class(svs_table, gene_class, gene_to_table):
     gene_to_effect = {}
     for gene in gene_to_table:
         gene_regions = gene_to_table[gene]
