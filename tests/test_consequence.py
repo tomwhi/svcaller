@@ -13,12 +13,12 @@ class TestConsequenceFunctions(unittest.TestCase):
 '''
 
         self.test_svs_df = pd.DataFrame(OrderedDict({
-            "chrom": [1, 1, 2],
-            "start": [1000, 3000, 1000],
-            "end": [1100, 3100, 1100],
-            "type": ["DEL", "DEL", "TRA"],
-            "score": [0, 0, 0],
-            "strand": ["+", "+", "+"]
+            "chrom": [1, 1, 1, 2],
+            "start": [1000, 3000, 1500, 1000],
+            "end": [1100, 3100, 1600, 1100],
+            "type": ["DEL", "DEL", "DEL", "TRA"],
+            "score": [0, 0, 0, 0],
+            "strand": ["+", "+", "+", "+"]
         }))
 
         self.test_regions_df_ts1 = pd.DataFrame(OrderedDict({
@@ -107,4 +107,10 @@ class TestConsequenceFunctions(unittest.TestCase):
         self.assertEquals(
             predict_del_effect(self.test_svs_df.iloc[1,:], GeneClass.TUMOUR_SUPRESSOR, self.test_regions_df_ts1),
             SvEffect.NO_OVERLAP
+        )
+
+    def test_predict_del_effect_unknown_effect(self):
+        self.assertEquals(
+            predict_del_effect(self.test_svs_df.iloc[2,:], GeneClass.TUMOUR_SUPRESSOR, self.test_regions_df_ts1),
+            SvEffect.OVERLAP_UNKNOWN_EFFECT
         )
