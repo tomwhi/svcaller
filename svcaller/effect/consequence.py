@@ -110,17 +110,21 @@ def predict_svs_gene_effect(svs, gene_class, gene_regions):
     return collapse_sv_predictions(all_svs_effects)
 
 
-def predict_svs_effects_for_class(svs_table, gene_class, gene_to_table):
+def filter_svtype_to_table(svtype_to_table, gene_regions):
+    def sv_in_regions_tmp(sv):
+        return sv_in_regions(sv, gene_regions)
+
+    return {svtype: svs_table[svs_table.apply(sv_in_regions_tmp, axis=1)]
+            for (svtype, svs_table) in svtype_to_table.items()}
+
+
+def predict_svs_effects_for_class(svtype_to_table, gene_class, gene_to_table):
     gene_to_effect = {}
     for gene in gene_to_table:
         gene_regions = gene_to_table[gene]
 
-        def sv_in_regions_tmp(sv):
-            return sv_in_regions(sv, gene_regions)
-
-        overlapping_svs = svs_table[svs_table.apply(sv_in_regions_tmp, axis=1)]
-
-        gene_svs_effect = predict_svs_gene_effect(overlapping_svs, gene_class, gene_regions)
+        svtype_to_table_overlapping = filter_svtype_to_table(svtype_to_table, gene_regions)
+        gene_svs_effect = predict_svs_gene_effect(svtype_to_table_overlapping, gene_class, gene_regions)
         gene_to_effect[gene] = gene_svs_effect
 
     return gene_to_effect
@@ -139,7 +143,7 @@ def predict_effects(svs_file, ts_file, ar_file, fusion_file):
     :return: A dictionary with gene class as key and results dictionary as value
     """
 
-    svs_tables = parse_bed_to_dict(svs_file)
+    svtype_to_table = parse_bed_to_dict(svs_file)
 
     gene_classes = [GeneClass.TUMOUR_SUPRESSOR, GeneClass.AR, GeneClass.FUSION_CANDIDATE]
     gene_to_bed_tables = [parse_bed_to_dict(curr_file) for curr_file in
@@ -149,6 +153,6 @@ def predict_effects(svs_file, ts_file, ar_file, fusion_file):
     gene_class_to_results = {}
     for gene_class, gene_region_bed in gene_class_to_gene_region_bed.items():
         gene_class_to_results[gene_class] = \
-            predict_svs_effects_for_class(svs_tables, gene_class, gene_region_bed)
+            predict_svs_effects_for_class(svtype_to_table, gene_class, gene_region_bed)
 
     return gene_class_to_results

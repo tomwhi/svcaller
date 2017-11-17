@@ -52,24 +52,6 @@ class TestConsequenceFunctions(unittest.TestCase):
         self.assertFalse(region1_overlaps_region2(('1', 1000, 2000), ('1', 2500, 3000)))
         self.assertFalse(region1_overlaps_region2(('1', 1000, 2000), ('1', 500, 800)))
 
-    @patch('svcaller.effect.consequence.predict_svs_effects_for_class')
-    def test_predict_effects(self, mock_predict_svs_effects_for_class):
-        mock_predict_svs_effects_for_class.return_value = {}
-        open_name = '%s.open' % __name__
-        with patch(open_name, mock_open(read_data=self.test_svs_content), create=True) as open1, \
-            patch(open_name, mock_open(read_data=self.test_bed_content_1), create=True) as open2, \
-            patch(open_name, mock_open(read_data=self.test_bed_content_1), create=True) as open3, \
-            patch(open_name, mock_open(read_data=self.test_bed_content_fusion), create=True) as open4:
-            with open1("dummy_svs.bed") as test_svs_file, \
-                open2("dummy_ts.bed") as test_ts_file, \
-                open3("dummy_ar.bed") as test_ar_file, \
-                open4("dummy_fusion.bed") as test_fusion_file:
-                gene_class_to_results = \
-                    predict_effects(test_svs_file, test_ts_file, test_ar_file, test_fusion_file)
-                self.assertIn(GeneClass.TUMOUR_SUPRESSOR, gene_class_to_results)
-                self.assertIn(GeneClass.AR, gene_class_to_results)
-                self.assertIn(GeneClass.FUSION_CANDIDATE, gene_class_to_results)
-
     def test_sv_in_regions_true(self):
         self.assertTrue(sv_in_regions(
             self.test_svs_df.iloc[0,:],
@@ -114,3 +96,36 @@ class TestConsequenceFunctions(unittest.TestCase):
             predict_del_effect(self.test_svs_df.iloc[2,:], GeneClass.TUMOUR_SUPRESSOR, self.test_regions_df_ts1),
             SvEffect.OVERLAP_UNKNOWN_EFFECT
         )
+
+    def test_filter_svtype_to_table(self):
+        svtype_to_table = {
+            "DEL": pd.DataFrame(OrderedDict({
+            "chrom": [1, 1, 1],
+            "start": [1000, 3000, 1500],
+            "end": [1100, 3100, 1600],
+            "type": ["DEL", "DEL", "DEL"],
+            "score": [0, 0, 0],
+            "strand": ["+", "+", "+"]
+        }))}
+
+        filtered = filter_svtype_to_table(svtype_to_table, self.test_regions_df_ts1)
+        self.assertIn("DEL", filtered)
+        self.assertEquals(2, len(list(filtered.values())[0]))
+
+    @patch('svcaller.effect.consequence.predict_svs_effects_for_class')
+    def test_predict_effects(self, mock_predict_svs_effects_for_class):
+        mock_predict_svs_effects_for_class.return_value = {}
+        open_name = '%s.open' % __name__
+        with patch(open_name, mock_open(read_data=self.test_svs_content), create=True) as open1, \
+            patch(open_name, mock_open(read_data=self.test_bed_content_1), create=True) as open2, \
+            patch(open_name, mock_open(read_data=self.test_bed_content_1), create=True) as open3, \
+            patch(open_name, mock_open(read_data=self.test_bed_content_fusion), create=True) as open4:
+            with open1("dummy_svs.bed") as test_svs_file, \
+                open2("dummy_ts.bed") as test_ts_file, \
+                open3("dummy_ar.bed") as test_ar_file, \
+                open4("dummy_fusion.bed") as test_fusion_file:
+                gene_class_to_results = \
+                    predict_effects(test_svs_file, test_ts_file, test_ar_file, test_fusion_file)
+                self.assertIn(GeneClass.TUMOUR_SUPRESSOR, gene_class_to_results)
+                self.assertIn(GeneClass.AR, gene_class_to_results)
+                self.assertIn(GeneClass.FUSION_CANDIDATE, gene_class_to_results)
