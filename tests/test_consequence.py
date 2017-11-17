@@ -81,3 +81,18 @@ class TestConsequenceFunctions(unittest.TestCase):
             self.test_svs_df.iloc[1,:],
             self.test_regions_df_ts1
         ))
+
+    def test_collapse_sv_predictions_1(self):
+        self.assertEquals(collapse_sv_predictions([SvEffect.NO_OVERLAP]), SvEffect.NO_OVERLAP)
+
+    def test_collapse_sv_predictions_2(self):
+        self.assertEquals(
+            collapse_sv_predictions([SvEffect.NO_OVERLAP, SvEffect.OVERLAP_UNKNOWN_EFFECT, SvEffect.NO_OVERLAP]),
+            SvEffect.OVERLAP_UNKNOWN_EFFECT
+        )
+
+    def test_collapse_sv_predictions_3(self):
+        self.assertEquals(
+            collapse_sv_predictions([SvEffect.NO_OVERLAP, SvEffect.OVERLAP_UNKNOWN_EFFECT, SvEffect.OVERLAP_WITH_EFFECT]),
+            SvEffect.OVERLAP_WITH_EFFECT
+        )
