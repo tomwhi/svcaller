@@ -37,11 +37,11 @@ class TestConsequenceFunctions(unittest.TestCase):
 1\t30000\t40000\tFUSION2
 '''
 
-    def test_extract_groups(self):
+    def test_parse_bed_to_dict(self):
         open_name = '%s.open' % __name__
         with patch(open_name, mock_open(read_data=self.test_svs_content), create=True):
             with open("dummy_filename.bed") as test_svs:
-                type2df = extract_groups(test_svs)
+                type2df = parse_bed_to_dict(test_svs)
                 self.assertIn("DEL", type2df)
                 self.assertIn("TRA", type2df)
                 self.assertEquals(type2df["DEL"].iloc[0,1], 1000)
