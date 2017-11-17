@@ -96,3 +96,15 @@ class TestConsequenceFunctions(unittest.TestCase):
             collapse_sv_predictions([SvEffect.NO_OVERLAP, SvEffect.OVERLAP_UNKNOWN_EFFECT, SvEffect.OVERLAP_WITH_EFFECT]),
             SvEffect.OVERLAP_WITH_EFFECT
         )
+
+    def test_predict_del_effect_with_effect(self):
+        self.assertEquals(
+            predict_del_effect(self.test_svs_df.iloc[0,:], GeneClass.TUMOUR_SUPRESSOR, self.test_regions_df_ts1),
+            SvEffect.OVERLAP_WITH_EFFECT
+        )
+
+    def test_predict_del_effect_no_effect(self):
+        self.assertEquals(
+            predict_del_effect(self.test_svs_df.iloc[1,:], GeneClass.TUMOUR_SUPRESSOR, self.test_regions_df_ts1),
+            SvEffect.NO_OVERLAP
+        )

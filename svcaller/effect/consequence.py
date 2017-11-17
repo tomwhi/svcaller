@@ -78,7 +78,7 @@ def collapse_sv_predictions(sv_effects):
     return curr_max_effect
 
 
-def predict_del_effect(sv, gene_class, functional_regions):
+def predict_del_effect(sv, _, functional_regions):
     # Ignore gene_class; just determine effect based on overlap with any of
     # the specified functional_regions.
 
@@ -88,7 +88,8 @@ def predict_del_effect(sv, gene_class, functional_regions):
     if sv_in_regions(sv, functional_regions):
         curr_prediction = SvEffect.OVERLAP_UNKNOWN_EFFECT
 
-    region_overlap_values = [region1_overlaps_region2(sv, region) for region in functional_regions]
+    region_overlap_values = [region1_overlaps_region2(sv, region)
+                             for (_, region) in functional_regions.iterrows()]
     if any(region_overlap_values):
         curr_prediction = SvEffect.OVERLAP_WITH_EFFECT
 
