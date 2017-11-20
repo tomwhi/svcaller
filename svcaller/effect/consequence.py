@@ -60,13 +60,18 @@ def predict_effect_overlap(sv, functional_regions):
     return curr_prediction
 
 
-# FIXME: Representing AR last non-LBD exon as the first gene_regions
-# row. This seems potentially inelegant and bug-prone, and affects
-# the functions below. Doing this in order to be able to re-use much
-# of the code for given SV type effects across the two classes (tumour
+# FIXME: Representing AR TSS and last non-LBD exon as the first two
+# gene_regions rows. This seems potentially inelegant and bug-prone, and
+# affects the functions below. Doing this in order to be able to re-use
+# much of the code for given SV type effects across the two classes (tumour
 # suppressor and AR). However, there is probably a cleaner solution.
 def get_ar_regions(gene_regions):
-    return (gene_regions.iloc[0,:], gene_regions.iloc[1:,:])
+    if gene_regions.iloc[0,1] != gene_regions.iloc[0,2]:
+        import pdb; pdb.set_trace()
+        dummy = 1
+    assert gene_regions.iloc[0,1] == gene_regions.iloc[0,2]
+    return (gene_regions.iloc[0,:], gene_regions.iloc[1,:],
+            gene_regions.iloc[2:,:])
 
 
 def predict_del_effect(sv, gene_class, gene_regions):
@@ -74,7 +79,7 @@ def predict_del_effect(sv, gene_class, gene_regions):
 
     functional_regions = gene_regions
     if gene_class == GeneClass.AR:
-        (last_non_lbd_region, functional_regions) = get_ar_regions(gene_regions)
+        (_, last_non_lbd_region, functional_regions) = get_ar_regions(gene_regions)
 
     prediction = predict_effect_overlap(sv, functional_regions)
 
@@ -93,7 +98,7 @@ def predict_inv_effect(sv, gene_class, gene_regions):
 
     functional_regions = gene_regions
     if gene_class == GeneClass.AR:
-        (last_non_lbd_region, functional_regions) = get_ar_regions(gene_regions)
+        (_, last_non_lbd_region, functional_regions) = get_ar_regions(gene_regions)
 
     prediction = predict_effect_overlap(sv, functional_regions)
 
@@ -114,7 +119,42 @@ def predict_inv_effect(sv, gene_class, gene_regions):
 
 
 def predict_dup_effect(sv, gene_class, gene_regions):
-    return None
+    assert sv[3] == SvType.DUP.value
+
+    functional_regions = gene_regions
+    if gene_class == GeneClass.AR:
+        (tss, last_non_lbd_region, functional_regions) = get_ar_regions(gene_regions)
+
+    prediction = predict_effect_overlap(sv, functional_regions)
+
+    # FIXME: It feels like there must be a more elegant, bug-proof, readable
+    # way to do this (i.e. dealing with the various DUP overlap scenarios):
+    if prediction == SvEffect.OVERLAP_WITH_EFFECT:
+        assert sv[0] == gene_regions.iloc[0,0]
+        if gene_class == GeneClass.TUMOUR_SUPRESSOR:
+            # If the duplication overhangs either end of the overall functional
+            # region, then predict unknown effect:
+            if (sv[1] < functional_regions.iloc[0,1]) or \
+               (sv[2] > functional_regions.iloc[-1,2]):
+                prediction = SvEffect.OVERLAP_UNKNOWN_EFFECT
+        if gene_class == GeneClass.AR:
+            # If the duplication overlaps the last non-lbd region or the end
+            # of the AR region, then change call to unknown significance:
+            if (sv[1] < last_non_lbd_region[2]) or \
+               (sv[2] > functional_regions.iloc[-1, 2]):
+                prediction = SvEffect.OVERLAP_UNKNOWN_EFFECT
+
+    # Deal with separate scenario for AR, in which a duplication that includes the
+    # TSS and last non-LBD region - but excludes part of the LB functional region -
+    # could result in an mRNA lacking the LBD, depending on the size of the
+    # duplicated region preceding the TSS:
+    if gene_class == GeneClass.AR:
+        assert sv[0] == tss[0]
+        if (sv[1] < tss[1]) and (sv[2] > last_non_lbd_region[2]) and \
+           (sv[2] < functional_regions.iloc[-1, 2]):
+            prediction = SvEffect.OVERLAP_WITH_EFFECT
+
+    return prediction
 
 
 def predict_tra_effect(sv, gene_class, gene_regions):
