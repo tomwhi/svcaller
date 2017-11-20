@@ -66,9 +66,6 @@ def predict_effect_overlap(sv, functional_regions):
 # much of the code for given SV type effects across the two classes (tumour
 # suppressor and AR). However, there is probably a cleaner solution.
 def get_ar_regions(gene_regions):
-    if gene_regions.iloc[0,1] != gene_regions.iloc[0,2]:
-        import pdb; pdb.set_trace()
-        dummy = 1
     assert gene_regions.iloc[0,1] == gene_regions.iloc[0,2]
     return (gene_regions.iloc[0,:], gene_regions.iloc[1,:],
             gene_regions.iloc[2:,:])
@@ -158,7 +155,46 @@ def predict_dup_effect(sv, gene_class, gene_regions):
 
 
 def predict_tra_effect(sv, gene_class, gene_regions):
-    return None
+    assert sv[3] == SvType.TRA.value
+
+    functional_regions = gene_regions
+    if gene_class == GeneClass.AR:
+        (_, last_non_lbd_region, functional_regions) = get_ar_regions(gene_regions)
+
+    assert sv[0] == functional_regions.iloc[0,0]
+
+    prediction = SvEffect.NO_OVERLAP
+
+    tra_point_position = sv[2]
+    if sv[5] == "-":
+        tra_point_position = sv[1]
+
+    # Fall back to calling unknown significance overlap if the TRA occurs
+    # somewhere within the functional region:
+    if (tra_point_position > functional_regions.iloc[0,1]) and \
+       (tra_point_position < functional_regions.iloc[-1,2]):
+        prediction = SvEffect.OVERLAP_UNKNOWN_EFFECT
+
+    # For determining if the SV has a known effect, only consider TRA events
+    # pointing in the same direction as the gene, irrespective of gene class:
+    if sv[5] == gene_regions.iloc[0, 5]:
+        if gene_class == GeneClass.TUMOUR_SUPRESSOR:
+            # A TRA anywhere in the functional region pointing the same
+            # direction as the gene transcription will be called as having
+            # an effect in the case of tumour supressors:
+            if (tra_point_position > functional_regions.iloc[0,1]) and \
+               (tra_point_position < functional_regions.iloc[-1,2]):
+                prediction = SvEffect.OVERLAP_WITH_EFFECT
+        elif gene_class == GeneClass.AR:
+            # A TRA pointing the same direction as the gene transcription
+            # and occuring after the last non-LBD region but before the
+            # end of the LBD functional region will be called as having
+            # an effect in the case of AR:
+            if (tra_point_position > last_non_lbd_region[2]) and \
+               (tra_point_position < functional_regions.iloc[-1,2]):
+                prediction = SvEffect.OVERLAP_WITH_EFFECT
+
+    return prediction
 
 
 def collapse_sv_predictions(sv_effects):
