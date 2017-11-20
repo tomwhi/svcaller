@@ -12,11 +12,20 @@ class TestConsequenceFunctions(unittest.TestCase):
 2\t1000\t1100\tTRA\t0\t+
 '''
 
-        self.eg_svs_df = pd.DataFrame(OrderedDict({
-            "chrom": [1, 1, 1, 2],
+        self.eg_svs_del_df = pd.DataFrame(OrderedDict({
+            "chrom": [1, 1, 1, 1],
             "start": [1000, 3000, 1500, 1000],
-            "end": [1100, 3100, 1600, 1100],
-            "type": ["DEL", "DEL", "DEL", "TRA"],
+            "end": [1100, 3100, 1600, 3000],
+            "type": ["DEL", "DEL", "DEL", "DEL"],
+            "score": [0, 0, 0, 0],
+            "strand": ["+", "+", "+", "+"]
+        }))
+
+        self.eg_svs_inv_df = pd.DataFrame(OrderedDict({
+            "chrom": [1, 1, 1, 1],
+            "start": [1000, 1500, 1000, 1900],
+            "end": [1100, 1600, 3000, 2200],
+            "type": ["INV", "INV", "INV", "INV"],
             "score": [0, 0, 0, 0],
             "strand": ["+", "+", "+", "+"]
         }))
@@ -90,13 +99,13 @@ class TestConsequenceFunctions(unittest.TestCase):
 
     def test_sv_in_regions_true(self):
         self.assertTrue(sv_in_regions(
-            self.eg_svs_df.iloc[0, :],
+            self.eg_svs_del_df.iloc[0, :],
             self.eg_regions_df_ts1
         ))
 
     def test_sv_in_regions_false(self):
         self.assertFalse(sv_in_regions(
-            self.eg_svs_df.iloc[1, :],
+            self.eg_svs_del_df.iloc[1, :],
             self.eg_regions_df_ts1
         ))
 
@@ -117,20 +126,81 @@ class TestConsequenceFunctions(unittest.TestCase):
 
     def test_predict_del_effect_with_effect(self):
         self.assertEquals(
-            predict_del_effect(self.eg_svs_df.iloc[0, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
+            predict_del_effect(self.eg_svs_del_df.iloc[0, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
             SvEffect.OVERLAP_WITH_EFFECT
         )
 
     def test_predict_del_effect_no_effect(self):
         self.assertEquals(
-            predict_del_effect(self.eg_svs_df.iloc[1, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
+            predict_del_effect(self.eg_svs_del_df.iloc[1, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
             SvEffect.NO_OVERLAP
         )
 
     def test_predict_del_effect_unknown_effect(self):
         self.assertEquals(
-            predict_del_effect(self.eg_svs_df.iloc[2, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
+            predict_del_effect(self.eg_svs_del_df.iloc[2, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
             SvEffect.OVERLAP_UNKNOWN_EFFECT
+        )
+
+    def test_predict_del_effect_overlap_first_exon_ts(self):
+        self.assertEquals(
+            predict_del_effect(self.eg_svs_del_df.iloc[0, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
+            SvEffect.OVERLAP_WITH_EFFECT
+        )
+
+    def test_predict_del_effect_overlap_non_lbd_ar(self):
+        self.assertEquals(
+            predict_del_effect(self.eg_svs_del_df.iloc[0, :], GeneClass.AR, self.eg_regions_df_ts1),
+            SvEffect.NO_OVERLAP
+        )
+
+    def test_predict_del_effect_overlap_non_lbd_to_first_lbd_ar(self):
+        self.assertEquals(
+            predict_del_effect(self.eg_svs_del_df.iloc[3, :], GeneClass.AR, self.eg_regions_df_ts1),
+            SvEffect.OVERLAP_UNKNOWN_EFFECT
+        )
+
+    def test_predict_inv_effect_first_region(self):
+        self.assertEquals(
+            predict_inv_effect(self.eg_svs_inv_df.iloc[0, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
+            SvEffect.OVERLAP_WITH_EFFECT
+        )
+
+    def test_predict_inv_effect_in_the_middle(self):
+        self.assertEquals(
+            predict_inv_effect(self.eg_svs_inv_df.iloc[1, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
+            SvEffect.OVERLAP_UNKNOWN_EFFECT
+        )
+
+    def test_predict_inv_effect_first_and_last_overlap(self):
+        self.assertEquals(
+            predict_inv_effect(self.eg_svs_inv_df.iloc[2, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
+            SvEffect.OVERLAP_WITH_EFFECT
+        )
+
+    def test_predict_inv_effect_first_region_ar(self):
+        self.assertEquals(
+            predict_inv_effect(self.eg_svs_inv_df.iloc[0, :], GeneClass.AR, self.eg_regions_df_ts1),
+            SvEffect.NO_OVERLAP
+        )
+
+    def test_predict_inv_effect_in_the_middle_ar(self):
+        test_sv = self.eg_svs_inv_df.iloc[1, :]
+        self.assertEquals(
+            predict_inv_effect(test_sv, GeneClass.AR, self.eg_regions_df_ts1),
+            SvEffect.NO_OVERLAP
+        )
+
+    def test_predict_inv_effect_first_and_last_overlap_ar(self):
+        self.assertEquals(
+            predict_inv_effect(self.eg_svs_inv_df.iloc[2, :], GeneClass.AR, self.eg_regions_df_ts1),
+            SvEffect.OVERLAP_UNKNOWN_EFFECT
+        )
+
+    def test_predict_inv_effect_last_overlap_ar(self):
+        self.assertEquals(
+            predict_inv_effect(self.eg_svs_inv_df.iloc[3, :], GeneClass.AR, self.eg_regions_df_ts1),
+            SvEffect.OVERLAP_WITH_EFFECT
         )
 
     def test_filter_svtype_to_table(self):

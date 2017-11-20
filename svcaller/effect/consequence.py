@@ -35,33 +35,89 @@ def sv_in_regions(sv, regions):
            (sv.iloc[1] < max(regions.iloc[:,2]))
 
 
-def predict_del_effect(sv, _, functional_regions):
-    # Ignore gene_class; just determine effect based on overlap with any of
-    # the specified functional_regions.
+def region1_overlaps_regions2(region1, regions2):
+    return any([region1_overlaps_region2(region1, region2)
+                for (_, region2) in regions2.iterrows()])
 
-    assert sv[3] == SvType.DEL.value
 
+def predict_effect_overlap(sv, functional_regions):
+    """
+    Predict the effect of the given structural variant on the
+    functional regions, based solely on overlap of the SV
+    with any of those regions.
+
+    :param sv: Series object representing a structural variant
+    :param functional_regions: Data frame representing the functional regions
+    :return: SvEffect enumeration value
+    """
     curr_prediction = SvEffect.NO_OVERLAP
     if sv_in_regions(sv, functional_regions):
         curr_prediction = SvEffect.OVERLAP_UNKNOWN_EFFECT
 
-    region_overlap_values = [region1_overlaps_region2(sv, region)
-                             for (_, region) in functional_regions.iterrows()]
-    if any(region_overlap_values):
+    if region1_overlaps_regions2(sv, functional_regions):
         curr_prediction = SvEffect.OVERLAP_WITH_EFFECT
 
     return curr_prediction
 
 
-def predict_inv_effect(sv, gene_class, functional_regions):
+# FIXME: Representing AR last non-LBD exon as the first gene_regions
+# row. This seems potentially inelegant and bug-prone, and affects
+# the functions below. Doing this in order to be able to re-use much
+# of the code for given SV type effects across the two classes (tumour
+# suppressor and AR). However, there is probably a cleaner solution.
+def get_ar_regions(gene_regions):
+    return (gene_regions.iloc[0,:], gene_regions.iloc[1:,:])
+
+
+def predict_del_effect(sv, gene_class, gene_regions):
+    assert sv[3] == SvType.DEL.value
+
+    functional_regions = gene_regions
+    if gene_class == GeneClass.AR:
+        (last_non_lbd_region, functional_regions) = get_ar_regions(gene_regions)
+
+    prediction = predict_effect_overlap(sv, functional_regions)
+
+    # The deletion must occur after the end of the last non-LBD region
+    # for the deletion to have an effect in the case of AR:
+    if gene_class == GeneClass.AR and prediction == SvEffect.OVERLAP_WITH_EFFECT:
+        assert sv[0] == gene_regions.iloc[0,0]
+        if sv[1] < last_non_lbd_region[2]:
+            prediction = SvEffect.OVERLAP_UNKNOWN_EFFECT
+
+    return prediction
+
+
+def predict_inv_effect(sv, gene_class, gene_regions):
+    assert sv[3] == SvType.INV.value
+
+    functional_regions = gene_regions
+    if gene_class == GeneClass.AR:
+        (last_non_lbd_region, functional_regions) = get_ar_regions(gene_regions)
+
+    prediction = predict_effect_overlap(sv, functional_regions)
+
+    if prediction == SvEffect.OVERLAP_WITH_EFFECT:
+        assert sv[0] == gene_regions.iloc[0,0]
+        if gene_class == GeneClass.TUMOUR_SUPRESSOR:
+            # If the inversion spans the *entire* gene region then it is counted
+            # as an unknown significance overlap:
+            if sv[1] < functional_regions.iloc[0,1] and sv[2] > functional_regions.iloc[-1,2]:
+                prediction = SvEffect.OVERLAP_UNKNOWN_EFFECT
+        if gene_class == GeneClass.AR:
+            # If the inversion includes some of the last non-lbd region, change call
+            # to unknown significance:
+            if sv[1] < last_non_lbd_region[2]:
+                prediction = SvEffect.OVERLAP_UNKNOWN_EFFECT
+
+    return prediction
+
+
+def predict_dup_effect(sv, gene_class, gene_regions):
     return None
 
 
-def predict_dup_effect(sv, gene_class, functional_regions):
-    return None
-
-
-def predict_tra_effect(sv, gene_class, functional_regions):
+def predict_tra_effect(sv, gene_class, gene_regions):
     return None
 
 
@@ -93,8 +149,6 @@ def predict_svs_gene_effect(svs, gene_class, gene_regions):
     # to a single prediction:
     all_svs_effects = []
     for sv_type in [type_ for type_ in iter(SvType)]:
-        print("TRACE: sv_type: {}".format(sv_type), file = sys.stderr)
-
         # Retrieve the SVs of the specified type:
         svs_of_type = svs.get(sv_type.value, pd.DataFrame({}))
 
@@ -103,8 +157,6 @@ def predict_svs_gene_effect(svs, gene_class, gene_regions):
 
         # Apply that function to each SV:
         for _, sv_row in svs_of_type.iterrows():
-            print("TRACE: sv_row:", file=sys.stderr)
-            print(sv_row, file=sys.stderr)
             all_svs_effects.append(predictor_function(sv_row, gene_class, gene_regions))
 
     return collapse_sv_predictions(all_svs_effects)
