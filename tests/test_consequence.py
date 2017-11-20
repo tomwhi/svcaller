@@ -320,14 +320,14 @@ class TestConsequenceFunctions(unittest.TestCase):
             SvEffect.OVERLAP_WITH_EFFECT
         )
 
-    def test_predict_tra_ts1_0(self):
+    def test_predict_tra_ts2_0(self):
         test_sv = self.eg_svs_tra_df.iloc[0, :]
         self.assertEquals(
             predict_tra_effect(test_sv, GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts2),
             SvEffect.NO_OVERLAP
         )
 
-    def test_predict_tra_ts1_1(self):
+    def test_predict_tra_ts2_1(self):
         test_sv = self.eg_svs_tra_df.iloc[1, :]
         self.assertEquals(
             predict_tra_effect(test_sv, GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts2),
