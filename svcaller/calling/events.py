@@ -4,6 +4,7 @@ import logging
 import sys
 from collections import defaultdict
 from enum import Enum
+import pandas as pd
 
 
 import svcaller.calling.softclip as softclip
@@ -503,6 +504,54 @@ def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
     return consensus_soft_clippings
 
 
+def get_read_strand(read):
+    strand = "+"
+    if read.flag & 16:
+        strand = "-"
+    return strand
+
+
+def extract_bed_data(group, event_type):
+    assert len(group) == 2
+    bed_data = []
+    if event_type == SvType.TRA:
+        # Represent each terminus as a separate bed item:
+        for _, row in group.iterrows():
+            bed_data.append([row[0], row[3], row[4], event_type.value, row[5], row[6]])
+    else:
+        coords = group.iloc[:,3:5].values.flatten()
+        start = min(coords)
+        end = max(coords)
+        strand = None
+        if group.iloc[0,6] == group.iloc[1,6]:
+            strand = group.iloc[0,6]
+        bed_data.append([group.iloc[0,0], start, end, event_type.value, group.iloc[0,5], strand])
+    return bed_data
+
+
+def read_sv_gtf(sv_gtf_file, event_type):
+    """
+    Read a structural variants gtf file and generate a bed-format compatible table
+    representing the event coordinates.
+
+    :param sv_gtf_file: An open gtf-formatted file containing structural variant calls
+    :param event_type: An SvType enumeration value specifying the structural variant type
+    :return: A data frame containing the structural variant calls
+    """
+
+    names = ["chrom", "source", "feature", "start", "end", "score", "strand", "frame", "attribute"]
+    gtf_file_df = pd.read_table(sv_gtf_file, sep="\t", header=None, index_col=None, names=names)
+    gtf_file_termini = gtf_file_df.loc[gtf_file_df["feature"] == "exon", :].copy()
+    event_names = gtf_file_termini["attribute"].apply(
+        lambda attribute: attribute.split(" ")[1].replace("\"", "").replace(";", ""))
+    gtf_file_termini["event_names"] = event_names
+    groups = gtf_file_termini.groupby("event_names")
+    def bed_extractor(group):
+        return extract_bed_data(group, event_type)
+
+    return pd.DataFrame(groups.apply(bed_extractor))
+
+
 class GenomicEvent:
     def __init__(self, terminusA_reads, terminusB_reads):
         # Set the event termini with terminus 1 as the first terminus
@@ -537,6 +586,12 @@ class GenomicEvent:
     def get_t1_mapqual(self):
         mapqual = max(list(map(lambda read: read.mapq, self._terminus1_reads)))
         return mapqual
+
+    def get_t1_strand(self):
+        return get_read_strand(self._terminus1_reads[0])
+
+    def get_t2_strand(self):
+        return get_read_strand(self._terminus2_reads[0])
 
     def get_t2_mapqual(self):
         return max(list(map(lambda read: read.mapq, self._terminus2_reads)))
@@ -621,19 +676,21 @@ class GenomicEvent:
         t1_chrom = self._terminus1_reads[0].rname
         t1_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus1_reads))))
         t1_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads))))
+        t1_strand = self.get_t1_strand()
 
         t2_chrom = self._terminus2_reads[0].rname
         t2_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus2_reads))))
         t2_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads))))
+        t2_strand = self.get_t2_strand()
 
         # Temporary code for printing genomic events in gff format...
-        t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
+        t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t%s\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
           (chrom_int2str(t1_chrom), t1_first_read_start, t1_last_read_end, self.get_t1_depth(),
-           self.get_event_name(), self.get_event_name())
+           t1_strand, self.get_event_name(), self.get_event_name())
 
-        t2_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
+        t2_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t%s\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
           (chrom_int2str(t2_chrom), t2_first_read_start, t2_last_read_end, self.get_t2_depth(),
-           self.get_event_name(), self.get_event_name())
+           t2_strand, self.get_event_name(), self.get_event_name())
 
         return t1_gtf + t2_gtf + self.get_softclip_gtf()
 

@@ -2,7 +2,9 @@ import logging
 
 import click
 
-from svcaller.effect import call_effect
+from .annotate import predict_effects_cmd as predict
+from .annotate import gtf_to_bed_cmd as makebed
+
 from .call import call_events_cmd as call
 from .call import cluster_filter_cmd as cluster_filter
 from .call import event_filter_cmd as event_filter
@@ -42,4 +44,5 @@ base.add_command(event_filter)
 base.add_command(cluster_filter)
 base.add_command(call)
 
-sveffect.add_command(call_effect)
+sveffect.add_command(predict)
+sveffect.add_command(makebed)
