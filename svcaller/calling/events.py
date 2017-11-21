@@ -476,7 +476,7 @@ def get_softclip_bounds(soft_clippings):
         return []
 
 
-def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
+def check_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
     '''Examine soft-clipping of all reads in reads2, to see if any of the
     soft-clipped coordinates are consistent with the specified coordinates.'''
 
@@ -526,7 +526,7 @@ def extract_bed_data(group, event_type):
         if group.iloc[0,6] == group.iloc[1,6]:
             strand = group.iloc[0,6]
         bed_data.append([group.iloc[0,0], start, end, event_type.value, group.iloc[0,5], strand])
-    return bed_data
+    return pd.DataFrame(bed_data)
 
 
 def read_sv_gtf(sv_gtf_file, event_type):
@@ -549,7 +549,7 @@ def read_sv_gtf(sv_gtf_file, event_type):
     def bed_extractor(group):
         return extract_bed_data(group, event_type)
 
-    return pd.DataFrame(groups.apply(bed_extractor))
+    return groups.apply(bed_extractor)
 
 
 class GenomicEvent:
@@ -649,7 +649,7 @@ class GenomicEvent:
         chrom = chrom_int2str(reads_chrom)
         return (chrom, start, end, reads_strand)
 
-    def test_soft_clipping(self, fasta_filename):
+    def check_soft_clipping(self, fasta_filename):
         '''Look at the soft-clipping for reads in terminus 1, and see if they match the
     	position of reads in terminus 2. Then, do the reverse. Record the result'''
 
@@ -658,11 +658,11 @@ class GenomicEvent:
         terminus1_span = self.get_terminus1_span(extension_length=100)
         terminus2_span = self.get_terminus2_span(extension_length=100)
 
-        self._matched_softclips_t1 = test_matched_soft_clipping(\
+        self._matched_softclips_t1 = check_matched_soft_clipping(\
             terminus1_span[0], terminus1_span[1], terminus1_span[2], \
             self._terminus2_reads, fasta_filename)
 
-        self._matched_softclips_t2 = test_matched_soft_clipping(\
+        self._matched_softclips_t2 = check_matched_soft_clipping(\
             terminus2_span[0], terminus2_span[1], terminus2_span[2], \
             self._terminus1_reads, fasta_filename)
 
@@ -775,7 +775,7 @@ def call_events(filtered_reads, fasta_filename):
 
     # Mark each putative event with soft-clipping information of the reads contained in it:
     for event in putative_events:
-        event.test_soft_clipping(fasta_filename)
+        event.check_soft_clipping(fasta_filename)
 
     return putative_events
 
