@@ -10,7 +10,7 @@ from svcaller.calling.events import event_filt, clust_filt, call_events, \
 
 
 @click.command()
-@click.option('--event-type', type=click.Choice([SvType.DEL, SvType.INV, SvType.TRA, SvType.DUP]), required=True)
+@click.option('--event-type', type=click.Choice([SvType.DEL.value, SvType.INV.value, SvType.TRA.value, SvType.DUP.value]), required=True)
 @click.option('--output-name', type=str, default="SV_CallOutput", required=False)
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.pass_context
@@ -29,7 +29,7 @@ def run_all_cmd(ctx, event_type, output_name, input_bam):
 
 
 @click.command()
-@click.option('--event-type', type=click.Choice([SvType.DEL, SvType.INV, SvType.TRA, SvType.DUP]), required=True)
+@click.option('--event-type', type=click.Choice([SvType.DEL.value, SvType.INV.value, SvType.TRA.value, SvType.DUP.value]), required=True)
 @click.option('--output-bam', type=str, default="event_filtered_reads.bam", required=False)
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.pass_context
@@ -156,7 +156,7 @@ def cluster_filter_inner(output_bam, input_bam):
 
 @click.command()
 @click.argument('input-bam', type=click.Path(exists=True))
-@click.argument('event-type', type=click.Choice([SvType.DEL, SvType.DUP, SvType.INV, SvType.TRA]))
+@click.argument('event-type', type=click.Choice([SvType.DEL.value, SvType.DUP.value, SvType.INV.value, SvType.TRA.value]))
 @click.option('--fasta-filename', type=str, required=True)
 @click.option('--events-gtf', type=str, default = "events.gtf", required=False)
 @click.option('--events-bam', type=str, default = "events.bam", required=False)
@@ -201,7 +201,7 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
     # Optionally filter on presence of soft-clipped regions scattered throughout the reads, depending on
     # the event type:
     logging.info("Filtering on scattered soft-clip regions...")
-    if event_type == DUP or event_type == INV:
+    if event_type == SvType.DUP.value or event_type == SvType.INV.value:
         filtered_events = list(filter(lambda event: not event.has_scattered_soft_clip_regions(), filtered_events))
 
     # Print them out:

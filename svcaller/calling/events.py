@@ -119,13 +119,13 @@ def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
             # This read passes the general bit-wise filter.
             # Apply the event-specific bit-wise flag field and other field
             # filters:
-            if event_type == SvType.DEL:
+            if event_type == SvType.DEL.value:
                 del_filt(filtered_reads, read)
-            elif event_type == SvType.INV:
+            elif event_type == SvType.INV.value:
                 inv_filt(filtered_reads, read)
-            elif event_type == SvType.TRA:
+            elif event_type == SvType.TRA.value:
                 tra_filt(filtered_reads, read)
-            elif event_type == SvType.DUP:
+            elif event_type == SvType.DUP.value:
                 dup_filt(filtered_reads, read)
             else:
                 logging.error("Invalid event_type: " + event_type)
