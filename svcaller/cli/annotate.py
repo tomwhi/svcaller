@@ -34,9 +34,10 @@ def gtf_to_bed_cmd(ctx, svs_bed, del_gtf, dup_gtf, inv_gtf, tra_gtf):
     with open(svs_bed, 'w') as svs_bed_file, open(del_gtf) as del_gtf_file, \
         open(dup_gtf) as dup_gtf_file, open(inv_gtf) as inv_gtf_file, \
         open(tra_gtf) as tra_gtf_file:
+        gtf_files_and_event_types = \
+            zip([del_gtf_file, dup_gtf_file, inv_gtf_file, tra_gtf_file],
+                [SvType.DEL, SvType.DUP, SvType.INV, SvType.TRA])
         sv_bed_tables = [read_sv_gtf(gtf_file, event_type)
-                         for (gtf_file, event_type) in
-                         zip([del_gtf_file, dup_gtf_file, inv_gtf_file, tra_gtf_file]
-                             [SvType.DEL, SvType.DUP, SvType.INV, SvType.TRA])]
+                         for (gtf_file, event_type) in gtf_files_and_event_types]
         svs_bed_table = pd.concat(sv_bed_tables)
         json.dump(svs_bed_file, svs_bed_table)
