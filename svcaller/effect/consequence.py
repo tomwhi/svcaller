@@ -1,11 +1,10 @@
 from enum import Enum
 import pandas as pd
-import sys
 from svcaller.calling.events import SvType
 
 
 class SvEffect(Enum):
-    NO_OVERLAP = "NO_OVERLAP"
+    NO_EFFECT = "NO_EFFECT"
     OVERLAP_WITH_EFFECT = "OVERLAP_WITH_EFFECT"
     OVERLAP_UNKNOWN_EFFECT = "OVERLAP_UNKNOWN_EFFECT"
 
@@ -50,7 +49,7 @@ def predict_effect_overlap(sv, functional_regions):
     :param functional_regions: Data frame representing the functional regions
     :return: SvEffect enumeration value
     """
-    curr_prediction = SvEffect.NO_OVERLAP
+    curr_prediction = SvEffect.NO_EFFECT
     if sv_in_regions(sv, functional_regions):
         curr_prediction = SvEffect.OVERLAP_UNKNOWN_EFFECT
 
@@ -163,7 +162,7 @@ def predict_tra_effect(sv, gene_class, gene_regions):
 
     assert sv[0] == functional_regions.iloc[0,0]
 
-    prediction = SvEffect.NO_OVERLAP
+    prediction = SvEffect.NO_EFFECT
 
     tra_point_position = sv[2]
     if sv[5] == "-":
@@ -177,7 +176,9 @@ def predict_tra_effect(sv, gene_class, gene_regions):
 
     # For determining if the SV has a known effect, only consider TRA events
     # pointing in the same direction as the gene, irrespective of gene class:
-    if sv[5] == gene_regions.iloc[0, 5]:
+    sv_dir = sv[5]
+    gene_dir = gene_regions.iloc[0, 5]
+    if sv_dir == gene_dir:
         if gene_class == GeneClass.TUMOUR_SUPRESSOR:
             # A TRA anywhere in the functional region pointing the same
             # direction as the gene transcription will be called as having
@@ -201,10 +202,10 @@ def collapse_sv_predictions(sv_effects):
     if not all([effect in SvEffect for effect in sv_effects]):
         raise InvalidSvEffectException("Input list {} includes invalid SvEffect value:".format(sv_effects))
 
-    curr_max_effect = SvEffect.NO_OVERLAP
+    curr_max_effect = SvEffect.NO_EFFECT
     for effect in sv_effects:
         if effect == SvEffect.OVERLAP_UNKNOWN_EFFECT:
-            if curr_max_effect == SvEffect.NO_OVERLAP:
+            if curr_max_effect == SvEffect.NO_EFFECT:
                 curr_max_effect = SvEffect.OVERLAP_UNKNOWN_EFFECT
         elif effect == SvEffect.OVERLAP_WITH_EFFECT:
             curr_max_effect = SvEffect.OVERLAP_WITH_EFFECT
@@ -246,14 +247,31 @@ def filter_svtype_to_table(svtype_to_table, gene_regions):
             for (svtype, svs_table) in svtype_to_table.items()}
 
 
+def genes_overlapped(svtype_to_table, gene_to_table):
+    gene_regions = [gene_to_table[gene].iloc[0,:] for gene in gene_to_table.keys()]
+    svs_as_df = pd.concat(list(svtype_to_table.values()))
+    gene_overlaps = [region1_overlaps_regions2(gene_region, svs_as_df)
+                     for gene_region in gene_regions]
+    return gene_overlaps
+
+
 def predict_svs_effects_for_class(svtype_to_table, gene_class, gene_to_table):
+    if gene_class == GeneClass.FUSION_CANDIDATE:
+        all_fusion_genes_overlapped = all(genes_overlapped(svtype_to_table, gene_to_table))
+        if all_fusion_genes_overlapped:
+            return {gene: SvEffect.OVERLAP_WITH_EFFECT.value
+                    for gene in gene_to_table.keys()}
+        else:
+            return {gene: SvEffect.NO_EFFECT.value
+                    for gene in gene_to_table.keys()}
+
     gene_to_effect = {}
     for gene in gene_to_table:
         gene_regions = gene_to_table[gene]
 
         svtype_to_table_overlapping = filter_svtype_to_table(svtype_to_table, gene_regions)
         gene_svs_effect = predict_svs_gene_effect(svtype_to_table_overlapping, gene_class, gene_regions)
-        gene_to_effect[gene] = gene_svs_effect
+        gene_to_effect[gene] = gene_svs_effect.value
 
     return gene_to_effect
 
@@ -280,7 +298,7 @@ def predict_effects(svs_file, ts_file, ar_file, fusion_file):
 
     gene_class_to_results = {}
     for gene_class, gene_region_bed in gene_class_to_gene_region_bed.items():
-        gene_class_to_results[gene_class] = \
+        gene_class_to_results[gene_class.value] = \
             predict_svs_effects_for_class(svtype_to_table, gene_class, gene_region_bed)
 
     return gene_class_to_results

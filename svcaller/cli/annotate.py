@@ -20,7 +20,7 @@ def predict_effects_cmd(ctx, svs, ts_regions, ar_regions, fusion_regions, effect
         open(ts_regions) as ts_regions_file, open(ar_regions) as ar_regions_file, \
         open(fusion_regions) as fusion_regions_file:
         effects = predict_effects(svs_file, ts_regions_file, ar_regions_file, fusion_regions_file)
-        json.dump(effects, effects_file)
+        json.dump(effects, effects_file, indent=4)
 
 
 @click.command()
