@@ -148,17 +148,17 @@ class TestConsequenceFunctions(unittest.TestCase):
         ))
 
     def test_collapse_sv_predictions_1(self):
-        self.assertEquals(collapse_sv_predictions([SvEffect.NO_OVERLAP]), SvEffect.NO_OVERLAP)
+        self.assertEquals(collapse_sv_predictions([SvEffect.NO_EFFECT]), SvEffect.NO_EFFECT)
 
     def test_collapse_sv_predictions_2(self):
         self.assertEquals(
-            collapse_sv_predictions([SvEffect.NO_OVERLAP, SvEffect.OVERLAP_UNKNOWN_EFFECT, SvEffect.NO_OVERLAP]),
+            collapse_sv_predictions([SvEffect.NO_EFFECT, SvEffect.OVERLAP_UNKNOWN_EFFECT, SvEffect.NO_EFFECT]),
             SvEffect.OVERLAP_UNKNOWN_EFFECT
         )
 
     def test_collapse_sv_predictions_3(self):
         self.assertEquals(
-            collapse_sv_predictions([SvEffect.NO_OVERLAP, SvEffect.OVERLAP_UNKNOWN_EFFECT, SvEffect.OVERLAP_WITH_EFFECT]),
+            collapse_sv_predictions([SvEffect.NO_EFFECT, SvEffect.OVERLAP_UNKNOWN_EFFECT, SvEffect.OVERLAP_WITH_EFFECT]),
             SvEffect.OVERLAP_WITH_EFFECT
         )
 
@@ -171,7 +171,7 @@ class TestConsequenceFunctions(unittest.TestCase):
     def test_predict_del_effect_no_effect(self):
         self.assertEquals(
             predict_del_effect(self.eg_svs_del_df.iloc[1, :], GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_del_effect_unknown_effect(self):
@@ -189,7 +189,7 @@ class TestConsequenceFunctions(unittest.TestCase):
     def test_predict_del_effect_overlap_non_lbd_ar(self):
         self.assertEquals(
             predict_del_effect(self.eg_svs_del_df.iloc[0, :], GeneClass.AR, self.eg_regions_df_ar),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_del_effect_overlap_non_lbd_to_first_lbd_ar(self):
@@ -219,14 +219,14 @@ class TestConsequenceFunctions(unittest.TestCase):
     def test_predict_inv_effect_first_region_ar(self):
         self.assertEquals(
             predict_inv_effect(self.eg_svs_inv_df.iloc[0, :], GeneClass.AR, self.eg_regions_df_ar),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_inv_effect_in_the_middle_ar(self):
         test_sv = self.eg_svs_inv_df.iloc[1, :]
         self.assertEquals(
             predict_inv_effect(test_sv, GeneClass.AR, self.eg_regions_df_ar),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_inv_effect_first_and_last_overlap_ar(self):
@@ -275,14 +275,14 @@ class TestConsequenceFunctions(unittest.TestCase):
         test_sv = self.eg_svs_dup_df.iloc[0, :]
         self.assertEquals(
             predict_dup_effect(test_sv, GeneClass.AR, self.eg_regions_df_ar),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_dup_ar_1(self):
         test_sv = self.eg_svs_dup_df.iloc[1, :]
         self.assertEquals(
             predict_dup_effect(test_sv, GeneClass.AR, self.eg_regions_df_ar),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_dup_ar_2(self):
@@ -296,7 +296,7 @@ class TestConsequenceFunctions(unittest.TestCase):
         test_sv = self.eg_svs_dup_df.iloc[3, :]
         self.assertEquals(
             predict_dup_effect(test_sv, GeneClass.AR, self.eg_regions_df_ar),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_dup_ar_4(self):
@@ -310,7 +310,7 @@ class TestConsequenceFunctions(unittest.TestCase):
         test_sv = self.eg_svs_tra_df.iloc[0, :]
         self.assertEquals(
             predict_tra_effect(test_sv, GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts1),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_tra_ts1_1(self):
@@ -324,7 +324,7 @@ class TestConsequenceFunctions(unittest.TestCase):
         test_sv = self.eg_svs_tra_df.iloc[0, :]
         self.assertEquals(
             predict_tra_effect(test_sv, GeneClass.TUMOUR_SUPRESSOR, self.eg_regions_df_ts2),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_tra_ts2_1(self):
@@ -338,7 +338,7 @@ class TestConsequenceFunctions(unittest.TestCase):
         test_sv = self.eg_svs_tra_df.iloc[0, :]
         self.assertEquals(
             predict_tra_effect(test_sv, GeneClass.AR, self.eg_regions_df_ar),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     def test_predict_tra_ar_1(self):
@@ -369,14 +369,14 @@ class TestConsequenceFunctions(unittest.TestCase):
     @patch('svcaller.effect.consequence.predict_tra_effect')
     def test_predict_svs_gene_effect_1(self, mock_predict_tra_effect, mock_predict_inv_effect,
                                      mock_predict_dup_effect, mock_predict_del_effect):
-        mock_predict_del_effect.return_value = SvEffect.NO_OVERLAP
-        mock_predict_dup_effect.return_value = SvEffect.NO_OVERLAP
-        mock_predict_inv_effect.return_value = SvEffect.NO_OVERLAP
-        mock_predict_tra_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_del_effect.return_value = SvEffect.NO_EFFECT
+        mock_predict_dup_effect.return_value = SvEffect.NO_EFFECT
+        mock_predict_inv_effect.return_value = SvEffect.NO_EFFECT
+        mock_predict_tra_effect.return_value = SvEffect.NO_EFFECT
 
         self.assertEquals(
             predict_svs_gene_effect(self.eg_svtype_to_table, GeneClass.TUMOUR_SUPRESSOR, "Dummy"),
-            SvEffect.NO_OVERLAP
+            SvEffect.NO_EFFECT
         )
 
     @patch('svcaller.effect.consequence.predict_del_effect')
@@ -386,9 +386,9 @@ class TestConsequenceFunctions(unittest.TestCase):
     def test_predict_svs_gene_effect_2(self, mock_predict_tra_effect, mock_predict_inv_effect,
                                      mock_predict_dup_effect, mock_predict_del_effect):
         mock_predict_del_effect.return_value = SvEffect.OVERLAP_UNKNOWN_EFFECT
-        mock_predict_dup_effect.return_value = SvEffect.NO_OVERLAP
-        mock_predict_inv_effect.return_value = SvEffect.NO_OVERLAP
-        mock_predict_tra_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_dup_effect.return_value = SvEffect.NO_EFFECT
+        mock_predict_inv_effect.return_value = SvEffect.NO_EFFECT
+        mock_predict_tra_effect.return_value = SvEffect.NO_EFFECT
 
         self.assertEquals(
             predict_svs_gene_effect(self.eg_svtype_to_table, GeneClass.TUMOUR_SUPRESSOR, "Dummy"),
@@ -401,10 +401,10 @@ class TestConsequenceFunctions(unittest.TestCase):
     @patch('svcaller.effect.consequence.predict_tra_effect')
     def test_predict_svs_gene_effect_3(self, mock_predict_tra_effect, mock_predict_inv_effect,
                                      mock_predict_dup_effect, mock_predict_del_effect):
-        mock_predict_del_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_del_effect.return_value = SvEffect.NO_EFFECT
         mock_predict_dup_effect.return_value = SvEffect.OVERLAP_WITH_EFFECT
         mock_predict_inv_effect.return_value = SvEffect.OVERLAP_UNKNOWN_EFFECT
-        mock_predict_tra_effect.return_value = SvEffect.NO_OVERLAP
+        mock_predict_tra_effect.return_value = SvEffect.NO_EFFECT
 
         self.assertEquals(
             predict_svs_gene_effect(self.eg_svtype_to_table, GeneClass.TUMOUR_SUPRESSOR, "Dummy"),
@@ -415,7 +415,7 @@ class TestConsequenceFunctions(unittest.TestCase):
     @patch('svcaller.effect.consequence.filter_svtype_to_table')
     def test_predict_svs_effects_for_class(self, mock_filter_svtype_to_table, mock_predict_svs_gene_effect):
         mock_filter_svtype_to_table.return_value = {}
-        mock_predict_svs_gene_effect.return_value = "Dummy"
+        mock_predict_svs_gene_effect.return_value = SvEffect.OVERLAP_UNKNOWN_EFFECT
 
         gene_to_table = {
             "TS1": pd.DataFrame(OrderedDict({
@@ -444,6 +444,6 @@ class TestConsequenceFunctions(unittest.TestCase):
                 open4("dummy_fusion.bed") as test_fusion_file:
                 gene_class_to_results = \
                     predict_effects(test_svs_file, test_ts_file, test_ar_file, test_fusion_file)
-                self.assertIn(GeneClass.TUMOUR_SUPRESSOR, gene_class_to_results)
-                self.assertIn(GeneClass.AR, gene_class_to_results)
-                self.assertIn(GeneClass.FUSION_CANDIDATE, gene_class_to_results)
+                self.assertIn(GeneClass.TUMOUR_SUPRESSOR.value, gene_class_to_results)
+                self.assertIn(GeneClass.AR.value, gene_class_to_results)
+                self.assertIn(GeneClass.FUSION_CANDIDATE.value, gene_class_to_results)
