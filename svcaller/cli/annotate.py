@@ -40,4 +40,8 @@ def gtf_to_bed_cmd(ctx, svs_bed, del_gtf, dup_gtf, inv_gtf, tra_gtf):
         sv_bed_tables = [read_sv_gtf(gtf_file, event_type)
                          for (gtf_file, event_type) in gtf_files_and_event_types]
         svs_bed_table = pd.concat(sv_bed_tables)
-        json.dump(svs_bed_file, svs_bed_table)
+
+        # Hack for IGV: Write a single chr1 1 1 entry on the first line to make IGV
+        # display the bed file in the whole genome view:
+        print("1\t1\t1\tNull\t0\t.", file=svs_bed_file)
+        svs_bed_table.to_csv(svs_bed_file, sep="\t", header=False, index=False, na_rep=".")
