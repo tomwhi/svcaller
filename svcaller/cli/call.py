@@ -1,5 +1,4 @@
-import logging
-import tempfile
+import logging, tempfile, uuid
 
 import click
 import pysam
@@ -10,30 +9,38 @@ from svcaller.calling.events import event_filt, clust_filt, call_events, \
 
 
 @click.command()
-@click.option('--event-type', type=click.Choice([SvType.DEL.value, SvType.INV.value, SvType.TRA.value, SvType.DUP.value]), required=True)
-@click.option('--output-name', type=str, default="SV_CallOutput", required=False)
 @click.argument('input-bam', type=click.Path(exists=True))
-@click.pass_context
-def run_all_cmd(ctx, event_type, output_name, input_bam):
-    logging.info("Running event calling: {}".format(event_type))
+@click.option('--event-type', type=click.Choice([SvType.DEL.value, SvType.INV.value, SvType.TRA.value, SvType.DUP.value]), required=True)
+@click.option('--fasta-filename', type=str, required=True)
+@click.option('--filter-event-overlap', is_flag = True)
+@click.option('--events-gtf', type=str, default = "events.gtf", required=False)
+@click.option('--events-bam', type=str, default = "events.bam", required=False)
+@click.option('--tmp-dir', type=str, default = "/tmp", required=False)
+def run_all_cmd(input_bam, event_type, fasta_filename, events_gtf, events_bam,
+                filter_event_overlap, tmp_dir):
+    logging.info("Running event calling for event type {} on {}.".format(event_type, input_bam))
 
+    unique_id = uuid.uuid4()
     logging.info("Applying event-specific filter...")
-    event_filt_reads_bam_name = output_name + "_filt1.bam"
-    event_filter_cmd(event_type, event_filt_reads_bam_name, input_bam)
+    event_filt_reads_bam_name = "{}/{}_event_filter_{}.bam".format(tmp_dir, unique_id, event_type)
+    event_filter_inner(event_type, event_filt_reads_bam_name, input_bam)
 
     logging.info("Applying read-cluster filter...")
-    clust_filt_reads_bam_name = output_name + "_filt2.bam"
-    cluster_filter_cmd(clust_filt_reads_bam_name, event_filt_reads_bam_name)
+    clust_filt_reads_bam_name = "{}/cluster_filter_{}.bam".format(tmp_dir, unique_id, event_type)
+    cluster_filter_inner(clust_filt_reads_bam_name, event_filt_reads_bam_name)
 
-    call_events(clust_filt_reads_bam_name)
+    logging.info("Calling events...")
+    with open(events_gtf, 'w') as events_outfile:
+        call_events_inner(clust_filt_reads_bam_name, event_type, fasta_filename, events_outfile,
+                          events_bam, filter_event_overlap, tmp_dir)
 
 
 @click.command()
 @click.option('--event-type', type=click.Choice([SvType.DEL.value, SvType.INV.value, SvType.TRA.value, SvType.DUP.value]), required=True)
 @click.option('--output-bam', type=str, default="event_filtered_reads.bam", required=False)
 @click.argument('input-bam', type=click.Path(exists=True))
-@click.pass_context
-def event_filter_cmd(ctx, event_type, output_bam, input_bam):
+def event_filter_cmd(event_type, output_bam, input_bam):
+    logging.info("TRACE: HERE.")
     event_filter_inner(event_type, output_bam, input_bam)
 
 
@@ -136,8 +143,7 @@ def event_filter_inner(event_type, output_bam, input_bam):
 @click.command()
 @click.option('--output-bam', type=str, default="cluster_filtered_reads", required=False)
 @click.argument('input-bam', type=click.Path(exists=True))
-@click.pass_context
-def cluster_filter_cmd(ctx, output_bam, input_bam):
+def cluster_filter_cmd(output_bam, input_bam):
     cluster_filter_inner(output_bam, input_bam)
 
 
@@ -162,8 +168,7 @@ def cluster_filter_inner(output_bam, input_bam):
 @click.option('--events-bam', type=str, default = "events.bam", required=False)
 @click.option('--filter-event-overlap', is_flag = True)
 @click.option('--tmp-dir', type=str, default = "/tmp", required=False)
-@click.pass_context
-def call_events_cmd(ctx, input_bam, event_type, fasta_filename, events_gtf, events_bam, filter_event_overlap, tmp_dir):
+def call_events_cmd(input_bam, event_type, fasta_filename, events_gtf, events_bam, filter_event_overlap, tmp_dir):
     events_outfile = open(events_gtf, 'w')
     call_events_inner(input_bam, event_type, fasta_filename, events_outfile, events_bam, filter_event_overlap, tmp_dir)
 
