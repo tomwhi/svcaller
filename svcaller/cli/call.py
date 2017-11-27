@@ -1,4 +1,4 @@
-import logging, tempfile, uuid
+import logging, os, tempfile, uuid
 
 import click
 import pysam
@@ -33,6 +33,9 @@ def run_all_cmd(input_bam, event_type, fasta_filename, events_gtf, events_bam,
     with open(events_gtf, 'w') as events_outfile:
         call_events_inner(clust_filt_reads_bam_name, event_type, fasta_filename, events_outfile,
                           events_bam, filter_event_overlap, tmp_dir)
+
+    os.remove(clust_filt_reads_bam_name)
+    os.remove(event_filt_reads_bam_name)
 
 
 @click.command()
@@ -217,7 +220,8 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
     # Write to a temporary bam file, to facilitate subsequent sorting with pysam. NOTE:
     # Could do sorting in memory since the read count should be low, but it seems less
     # bug-prone to use pysam's sort functionality:
-    tmp_bam_filename = tempfile.NamedTemporaryFile(prefix="tmp_bamfile_", suffix=".bam", dir=tmp_dir).name
+    unique_id = uuid.uuid4()
+    tmp_bam_filename = "{}/penultimate_bamfile_{}.bam".format(tmp_dir, unique_id, event_type)
     with pysam.AlignmentFile(tmp_bam_filename, "wb", header=samfile.header) as outf:
         for event in filtered_events:
             for read in event._terminus1_reads + event._terminus2_reads:
@@ -226,5 +230,7 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
     # Sort the intermediate bam file with samtools to produce the final output bam file, then index it:
     pysam.sort("-o", events_bam, tmp_bam_filename)
     pysam.index(str(events_bam))
+
+    os.remove(tmp_bam_filename)
 
     events_gff.close()
