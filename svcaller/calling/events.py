@@ -511,21 +511,44 @@ def get_read_strand(read):
     return strand
 
 
+# FIXME: Perhaps should introduce a NamedTuple representing terminus info, but
+# then this would be redundant with the existing genomic event class.
+def extract_terminus_info(row):
+    """
+    Extract sv terminus info from a gtf file row.
+
+    :param row: pandas Series object or similar containing sv info
+    accessible by key
+    :return: Tuple of extracted info
+    """
+
+    terminus_pos = row["end"]
+    if row["strand"] == "-":
+        terminus_pos = row["start"]
+
+    return (row["chrom"], terminus_pos, row["score"], row["strand"])
+
+
 def extract_bed_data(group, event_type):
     assert len(group) == 2
     bed_data = []
-    if event_type == SvType.TRA:
+
+    (t1, t2) = tuple([extract_terminus_info(row) for _, row in group.iterrows()])
+
+    if t1[0] != t2[0]:
+        assert event_type == SvType.TRA
         # Represent each terminus as a separate bed item:
-        for _, row in group.iterrows():
-            bed_data.append([row[0], row[3], row[4], event_type.value, row[5], row[6]])
+        bed_data.append([t1[0], t1[1], t1[1], event_type.value, t1[2], t1[3]])
+        bed_data.append([t2[0], t2[1], t2[1], event_type.value, t2[2], t2[3]])
     else:
-        coords = group.iloc[:,3:5].values.flatten()
-        start = min(coords)
-        end = max(coords)
+        terminus_positions = [t1[1], t2[1]]
+        start = min(terminus_positions)
+        end = max(terminus_positions)
         strand = None
-        if group.iloc[0,6] == group.iloc[1,6]:
-            strand = group.iloc[0,6]
-        bed_data.append([group.iloc[0,0], start, end, event_type.value, group.iloc[0,5], strand])
+        if t1[3] == t2[3]:
+            strand = t1[3]
+        bed_data.append([t1[0], start, end, event_type.value, t1[2], strand])
+
     return pd.DataFrame(bed_data)
 
 
@@ -546,6 +569,7 @@ def read_sv_gtf(sv_gtf_file, event_type):
         lambda attribute: attribute.split(" ")[1].replace("\"", "").replace(";", ""))
     gtf_file_termini["event_names"] = event_names
     groups = gtf_file_termini.groupby("event_names")
+
     def bed_extractor(group):
         return extract_bed_data(group, event_type)
 

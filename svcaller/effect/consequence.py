@@ -19,9 +19,16 @@ class InvalidSvEffectException(Exception):
     pass
 
 
+class InvalidBedFileException(Exception):
+    pass
+
+
 def parse_bed_to_dict(bed_file):
     df = pd.read_table(bed_file, header=None, sep="\t")
-    return {name: table for name, table in df.groupby(df[3])}
+    try:
+        return {name: table for name, table in df.groupby(df[3])}
+    except KeyError:
+        raise InvalidBedFileException("Invalid bed file contents: {}".format(df))
 
 
 def region1_overlaps_region2(region1, region2):
