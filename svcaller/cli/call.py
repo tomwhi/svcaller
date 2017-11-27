@@ -26,7 +26,7 @@ def run_all_cmd(input_bam, event_type, fasta_filename, events_gtf, events_bam,
     event_filter_inner(event_type, event_filt_reads_bam_name, input_bam)
 
     logging.info("Applying read-cluster filter...")
-    clust_filt_reads_bam_name = "{}/cluster_filter_{}.bam".format(tmp_dir, unique_id, event_type)
+    clust_filt_reads_bam_name = "{}/{}_cluster_filter_{}.bam".format(tmp_dir, unique_id, event_type)
     cluster_filter_inner(clust_filt_reads_bam_name, event_filt_reads_bam_name)
 
     logging.info("Calling events...")
