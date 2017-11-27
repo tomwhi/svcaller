@@ -51,8 +51,8 @@ class TestConsequenceFunctions(unittest.TestCase):
             with open("dummy_filename.gtf") as test_gtf_file:
                 svs_bed_table = read_sv_gtf(test_gtf_file, SvType.DEL)
                 self.assertEquals(len(svs_bed_table), 2)
-                self.assertEquals(svs_bed_table.iloc[0, 1], 7184103)
-                self.assertEquals(svs_bed_table.iloc[0, 2], 7576873)
+                self.assertEquals(svs_bed_table.iloc[0, 1], 7184551)
+                self.assertEquals(svs_bed_table.iloc[0, 2], 7576474)
                 self.assertEquals(svs_bed_table.iloc[0, 5], None)
 
 
@@ -62,11 +62,11 @@ class TestConsequenceFunctions(unittest.TestCase):
             with open("dummy_filename.gtf") as test_gtf_file:
                 svs_bed_table = read_sv_gtf(test_gtf_file, SvType.TRA)
                 self.assertEquals(len(svs_bed_table), 4)
-                self.assertEquals(svs_bed_table.iloc[0, 1], 7184103)
+                self.assertEquals(svs_bed_table.iloc[0, 1], 7184551)
                 self.assertEquals(svs_bed_table.iloc[0, 2], 7184551)
                 self.assertEquals(svs_bed_table.iloc[0, 5], "+")
                 self.assertEquals(svs_bed_table.iloc[1, 1], 7576474)
-                self.assertEquals(svs_bed_table.iloc[1, 2], 7576873)
+                self.assertEquals(svs_bed_table.iloc[1, 2], 7576474)
                 self.assertEquals(svs_bed_table.iloc[1, 5], "-")
 
 
@@ -76,6 +76,6 @@ class TestConsequenceFunctions(unittest.TestCase):
             with open("dummy_filename.gtf") as test_gtf_file:
                 svs_bed_table = read_sv_gtf(test_gtf_file, SvType.INV)
                 self.assertEquals(len(svs_bed_table), 2)
-                self.assertEquals(svs_bed_table.iloc[0, 1], 7184103)
+                self.assertEquals(svs_bed_table.iloc[0, 1], 7184551)
                 self.assertEquals(svs_bed_table.iloc[0, 2], 7576873)
                 self.assertEquals(svs_bed_table.iloc[0, 5], "+")

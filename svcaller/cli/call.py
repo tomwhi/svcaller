@@ -2,6 +2,7 @@ import logging, os, tempfile, uuid
 
 import click
 import pysam
+import pybedtools
 
 from svcaller.calling.events import SvType
 from svcaller.calling.events import event_filt, clust_filt, call_events, \
@@ -185,6 +186,7 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
     filtered_reads = [r for r in list(samfile)]
 
     # Call events:
+    pybedtools.set_tempdir(tmp_dir) # Necessary to control temporary folder usage during event calling
     events = list(call_events(filtered_reads, fasta_filename))
 
     # Filter on discordant read support depth:
