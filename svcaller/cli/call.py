@@ -9,6 +9,15 @@ from svcaller.calling.events import event_filt, clust_filt, call_events, \
     filter_on_shared_termini, chrom_int2str, event_termini_spaced_broadly
 
 
+def remove_bam_and_bai(bam_filename):
+    if os.path.exists(bam_filename):
+        os.remove(bam_filename)
+
+    bai_filename = "{}.bai".format(bam_filename)
+    if os.path.exists(bai_filename):
+        os.remove(bai_filename)
+
+
 @click.command()
 @click.argument('input-bam', type=click.Path(exists=True))
 @click.option('--event-type', type=click.Choice([SvType.DEL.value, SvType.INV.value, SvType.TRA.value, SvType.DUP.value]), required=True)
@@ -35,10 +44,8 @@ def run_all_cmd(input_bam, event_type, fasta_filename, events_gtf, events_bam,
         call_events_inner(clust_filt_reads_bam_name, event_type, fasta_filename, events_outfile,
                           events_bam, filter_event_overlap, tmp_dir)
 
-    os.remove(clust_filt_reads_bam_name)
-    os.remove("{}.bai".format(clust_filt_reads_bam_name))
-    os.remove(event_filt_reads_bam_name)
-    os.remove("{}.bai".format(clust_filt_reads_bam_name))
+    remove_bam_and_bai(clust_filt_reads_bam_name)
+    remove_bam_and_bai(event_filt_reads_bam_name)
 
 
 @click.command()
@@ -235,7 +242,6 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
     pysam.sort("-o", events_bam, tmp_bam_filename)
     pysam.index(str(events_bam))
 
-    os.remove(tmp_bam_filename)
-    os.remove("{}.bai".format(tmp_bam_filename))
+    remove_bam_and_bai(tmp_bam_filename)
 
     events_gff.close()
