@@ -35,7 +35,9 @@ def run_all_cmd(input_bam, event_type, fasta_filename, events_gtf, events_bam,
                           events_bam, filter_event_overlap, tmp_dir)
 
     os.remove(clust_filt_reads_bam_name)
+    os.remove("{}.bai".format(clust_filt_reads_bam_name))
     os.remove(event_filt_reads_bam_name)
+    os.remove("{}.bai".format(clust_filt_reads_bam_name))
 
 
 @click.command()
@@ -232,5 +234,6 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
     pysam.index(str(events_bam))
 
     os.remove(tmp_bam_filename)
+    os.remove("{}.bai".format(tmp_bam_filename))
 
     events_gff.close()
