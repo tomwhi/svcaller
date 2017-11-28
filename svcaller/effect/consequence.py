@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from enum import Enum
 import pandas as pd
 from svcaller.calling.events import SvType
@@ -24,9 +25,21 @@ class InvalidBedFileException(Exception):
 
 
 def parse_bed_to_dict(bed_file):
-    df = pd.read_table(bed_file, header=None, sep="\t")
+    col_types = OrderedDict(
+        {'chrom': object,
+         'start': int,
+         'end': int,
+         'name': object,
+         'score': object,
+         'strand': object,
+         })
+
+    df = pd.read_table(bed_file, header=None, sep="\t",
+                       names=list(col_types.keys()),
+                       dtype=col_types)
+
     try:
-        return {name: table for name, table in df.groupby(df[3])}
+        return {name: table for name, table in df.groupby(df["name"])}
     except KeyError:
         raise InvalidBedFileException("Invalid bed file contents: {}".format(df))
 
