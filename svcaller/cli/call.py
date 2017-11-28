@@ -165,7 +165,7 @@ def cluster_filter_inner(output_bam, input_bam):
 
     samfile = pysam.AlignmentFile(input_bam, "rb")
     reads = [r for r in list(samfile)]
-    cluster_filtered_reads = clust_filt(reads, samfile)
+    cluster_filtered_reads = clust_filt(reads)
     with pysam.AlignmentFile(output_bam, "wb", header=samfile.header) as outf:
         for read in cluster_filtered_reads:
             outf.write(read)

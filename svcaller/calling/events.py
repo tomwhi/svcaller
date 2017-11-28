@@ -1,7 +1,7 @@
 # coding=utf-8
 import functools
 import logging
-import sys
+import statistics, sys
 from collections import defaultdict
 from enum import Enum
 import pandas as pd
@@ -187,62 +187,202 @@ def chrom_int2str(chrom_int):
     return chrom_str
 
 
-def clust_filt(read_iter, samfile, chrom_of_interest=22):
-    '''Filter the input reads to only retain those read-pairs where there are other read-pairs with
-    similar coordinates. This is an ugly implementation, needs refactoring.
+def get_nearby_reads(reads, read_idx, dist_thresh):
+    read = reads[read_idx]
 
-    chrom_of_interest is a chromosome that is expected to contain
-    more reads than the other chromosomes.'''
+    half_read_len = int((len(read.seq) / 2.0))
+
+    nearby_min = read.pos + half_read_len - dist_thresh
+    nearby_max = read.pos + half_read_len + dist_thresh
+
+    nearby_reads = []
+    curr_lower_idx = read_idx - 1
+    lower_past_min = False
+    while curr_lower_idx > 0 and not lower_past_min:
+        curr_lower_read = reads[curr_lower_idx]
+        if curr_lower_read.pos < nearby_min or curr_lower_read.rname != read.rname:
+            lower_past_min = True
+        else:
+            nearby_reads.append(curr_lower_read)
+        curr_lower_idx = curr_lower_idx - 1
+
+    curr_higher_idx = read_idx + 1
+    higher_past_max = False
+    while curr_higher_idx < len(reads) and not higher_past_max:
+        curr_higher_read = reads[curr_higher_idx]
+        if curr_higher_read.pos > nearby_max or curr_higher_read.rname != read.rname:
+            higher_past_max = True
+        else:
+            nearby_reads.append(curr_higher_read)
+        curr_higher_idx = curr_higher_idx + 1
+
+    # Only consider reads nearby that are not optical/pcr duplicates and that are not secondary alignments
+    # (hence the flag filter):
+    return [nearby_read for nearby_read in nearby_reads if nearby_read.flag < 1024]
+
+
+def evaluate_guess(guessed_read, read):
+    """Evaluate a guessed read in the context of a binary search for
+    a specified target read's pair.
+
+    :param guessed_read: AlignedSegment object indicating a guess
+    :param read: AlignedSegment object indicating the read for which we wish
+        to find the pair.
+    :return: -1 if the guess is too big (either by chromosome or position)
+             0 if the guess is correct
+             1 if the guess is too small
+    """
+
+    # FIXME: Refactor: Seems like there should be a more elegant/bug-proof
+    # way to do this:
+    if guessed_read.reference_id == read.next_reference_id:
+        if guessed_read.reference_start == read.next_reference_start:
+            return 0
+        elif guessed_read.reference_start > read.next_reference_start:
+            return -1
+        else:
+            assert guessed_read.reference_start < read.next_reference_start
+            return 1
+    elif guessed_read.reference_id > read.next_reference_id:
+        return -1
+    else:
+        assert guessed_read.reference_id > read.next_reference_id
+        return 1
+
+
+def find_pair_idx(read, reads, curr_guess_idx, prev_guess_idx):
+    """
+    Find the read pair of the the specified read amongst the sorted list of reads,
+    and return it's index in that list.
+
+    :param read: AlignedSegment object
+    :param reads: Sorted list of AlignedSegment objects
+    :return: Integer index value of the paired read
+    """
+
+    curr_guess_read = reads[curr_guess_idx]
+    next_guess_direction = evaluate_guess(curr_guess_read, read)
+
+    new_guess_idx = -1
+
+    if next_guess_direction == 0:
+        return curr_guess_idx
+
+    elif next_guess_direction < 0:
+        # Current guess is too big.
+
+        if prev_guess_idx < curr_guess_idx:
+            # Correct guess lies somewhere between the current and
+            # previous guess:
+            new_guess_idx = (curr_guess_idx + prev_guess_idx) // 2
+        else:
+            # Correct guess lies somewhere between the current guess
+            # and the start:
+            new_guess_idx = curr_guess_idx // 2
+
+    else:
+        # Current guess is too small.
+
+        assert next_guess_direction > 0
+
+        if prev_guess_idx > curr_guess_idx:
+            # Correct guess lies somewhere between the current and
+            # previous guess:
+            new_guess_idx = (curr_guess_idx + prev_guess_idx) // 2
+        else:
+            # Calculate new guess as halfway between current and the end:
+            new_guess_idx = (curr_guess_idx + len(reads)) // 2
+
+    assert new_guess_idx != -1
+
+    return find_pair_idx(read, reads, new_guess_idx, curr_guess_idx)
+
+
+def read_density(reads, read_idx, interval_size = 10):
+    """Returns a measure of read density at the specified read_idx in the specified
+    sorted list of reads. Specifically, computes the median distance of all nearby
+    reads within the specified interval."""
+
+    interval_min = max(0, read_idx - interval_size)
+    interval_max = min(len(reads), read_idx + interval_size)
+
+    reads_in_interval = reads[interval_min:interval_max]
+
+    # Filter for reads on the same chromosome:
+    reads_on_same_chrom = [read for read in reads_in_interval
+                           if read.reference_id == reads[read_idx].reference_id]
+
+    # Compute all read distances and return the median value:
+    dists = [abs(read.reference_start - reads[read_idx].reference_start)
+             for read in reads_on_same_chrom]
+
+    return statistics.median(dists)
+
+
+def read_pair_has_enough_matching_pairs(reads, read_idx):
+    """
+    Determine whether there are enough matching read pairs, which must have
+    coordinates matching those of the read pair specified by the given
+    read_idx value.
+
+    :param reads: Sorted list of AlignedSegment objects
+    :param read_idx: Integer index identifying a read, and also it's pair
+    :return: Boolean value indicating whether there are enough matches
+    """
+
+    reads_nearby_non_unique = get_nearby_reads(reads, read_idx, 200)
+    read = reads[read_idx]
+    half_read_len = int((len(read.seq) / 2.0))
+
+    reads_nearby_dict = {}
+    for curr_read in reads_nearby_non_unique:
+        if curr_read.qname not in reads_nearby_dict:
+            reads_nearby_dict[curr_read.qname] = curr_read
+
+    reads_nearby = reads_nearby_dict.values()
+
+    paired_matches = 0
+    for read_nearby in reads_nearby:
+        read_nearby_pair_chrom = read_nearby.rnext
+        if read_nearby_pair_chrom == read.rnext and \
+            read.pnext + half_read_len - 1000 < read_nearby.pnext + half_read_len \
+            < read.pnext + half_read_len + 1000:
+            paired_matches += 1
+
+    return paired_matches >= 2
+
+
+def clust_filt(reads):
+    """
+    Filter the input reads to only retain those read-pairs where there are other read-pairs with
+    similar coordinates.
+
+    :param reads: A list of pysam AlignedSegment objects representing the reads
+    to be filtered. Must be ordered according to chromosomal position.
+    :return: A list of filtered reads.
+    """
+
     idx = 0
     filtered_reads = []
-    for read in read_iter:
-        half_read_len = int((len(read.seq)/2.0))
+    for read_idx in range(len(reads)):
+        read = reads[read_idx]
 
-        # Determine which of the reads (for this read-pair) will be used to identify
-        # nearby read-pairs: We could look at this read, or it's mate-pair.
-        base_read_chrom = read.rname
-        base_read_pos = read.pos
-        other_read_chrom = read.rnext
-        other_read_pos = read.pnext
+        initial_guess_idx = len(reads) // 2
+        paired_read_idx = find_pair_idx(read, reads, initial_guess_idx, initial_guess_idx)
+        if read_density(reads, read_idx) < read_density(reads, paired_read_idx):
+            # NOTE: The choice of whether to iterate at the read's position or it's paired
+            # read's position should not influence the outcome of this algorithm, but
+            # it may dramatically affect running time (this is why I do this).
 
-        # PROBLEM: This is a hack making the analysis focused on the X-chromosome.
-        # Need to revisit the problem and figure out a more general solution.
-
-        if base_read_chrom == 22:
-            base_read_chrom = read.rnext
-            base_read_pos = read.pnext
-            other_read_chrom = read.rname
-            other_read_pos = read.pos
-
-        base_read_chrom_str = chrom_int2str(base_read_chrom)
-
-        try:
-            # Only consider reads nearby that are not optical/pcr duplicates and that are not secondary alignments
-            # (hence the flag filter):
-            reads_nearby_non_unique = [r for r in samfile.fetch(base_read_chrom_str,
-                base_read_pos+half_read_len-200,
-                base_read_pos+half_read_len+200) if r.flag < 1024]
-
-            reads_nearby_dict = {}
-            for curr_read in reads_nearby_non_unique:
-                if not curr_read.qname in reads_nearby_dict:
-                    reads_nearby_dict[curr_read.qname] = curr_read
-
-            reads_nearby = reads_nearby_dict.values()
-
-            paired_matches = 0
-            for read_nearby in reads_nearby:
-                read_nearby_pair_chrom = read_nearby.rnext
-                if read_nearby_pair_chrom == other_read_chrom and \
-                   other_read_pos+half_read_len-1000 < read_nearby.pnext+half_read_len and \
-                   other_read_pos+half_read_len+1000 > read_nearby.pnext+half_read_len:
-                    paired_matches += 1
-
-            if paired_matches >= 2:
+            # Higher density of reads at this read position => Iterate over the
+            # original read's region when counting read pair matches:
+            if (read_pair_has_enough_matching_pairs(reads, read_idx)):
                 filtered_reads.append(read)
-
-        except Exception:
-            pass
+        else:
+            # Iterate over the paired read's region instead, since the original read's
+            # region does not have lower read density:
+            if (read_pair_has_enough_matching_pairs(reads, paired_read_idx)):
+                filtered_reads.append(read)
 
         if idx % 1000 == 0:
             print(idx, file=sys.stderr)
