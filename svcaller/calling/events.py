@@ -913,7 +913,7 @@ def define_events(clusters, read2cluster, read2mate):
 
     events = set()
 
-    for cluster in clusters:
+    for cluster in tqdm(clusters):
         for paired_cluster in cluster.get_paired_clusters():
             curr_cluster1_reads = list(filter(lambda read: read2cluster[read2mate[read]] == paired_cluster,
                                          cluster.get_reads()))
