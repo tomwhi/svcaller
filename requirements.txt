@@ -5,3 +5,4 @@ pandas
 pybedtools
 pysam
 swalign
+tqdm

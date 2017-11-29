@@ -1,10 +1,11 @@
 # coding=utf-8
 import functools
 import logging
-import statistics, sys
+import math, statistics, sys
 from collections import defaultdict
 from enum import Enum
 import pandas as pd
+from tqdm import tqdm
 
 
 import svcaller.calling.softclip as softclip
@@ -114,7 +115,7 @@ def event_termini_spaced_broadly(event):
 
 def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
     filtered_reads = []
-    for read in read_iter:
+    for read in tqdm(read_iter):
         if not read.flag & flag_filter:
             # This read passes the general bit-wise filter.
             # Apply the event-specific bit-wise flag field and other field
@@ -246,59 +247,56 @@ def evaluate_guess(guessed_read, read):
     elif guessed_read.reference_id > read.next_reference_id:
         return -1
     else:
-        assert guessed_read.reference_id > read.next_reference_id
+        assert guessed_read.reference_id < read.next_reference_id
         return 1
 
 
-def find_pair_idx(read, reads, curr_guess_idx, prev_guess_idx):
+def find_pair_idx(read, reads):
     """
     Find the read pair of the the specified read amongst the sorted list of reads,
-    and return it's index in that list.
+    in logarithmic time, and return it's index in that list. Returns -1 if the
+    read's read pair is not amongst the specified reads:
 
     :param read: AlignedSegment object
     :param reads: Sorted list of AlignedSegment objects
     :return: Integer index value of the paired read
     """
 
-    curr_guess_read = reads[curr_guess_idx]
-    next_guess_direction = evaluate_guess(curr_guess_read, read)
+    lower_idx = 0
+    higher_idx = len(reads) - 1
+    curr_guess_idx = (lower_idx + higher_idx) // 2
 
-    new_guess_idx = -1
+    curr_guess = reads[curr_guess_idx]
+    curr_guess_evaluation = evaluate_guess(curr_guess, read)
 
-    if next_guess_direction == 0:
-        return curr_guess_idx
+    prev_guess_idx = -1
 
-    elif next_guess_direction < 0:
-        # Current guess is too big.
-
-        if prev_guess_idx < curr_guess_idx:
-            # Correct guess lies somewhere between the current and
-            # previous guess:
-            new_guess_idx = (curr_guess_idx + prev_guess_idx) // 2
+    # Perform binary search to find a read that matches the read pair
+    # characteristics of the specified read:
+    while (curr_guess_evaluation != 0) and \
+        curr_guess_idx != prev_guess_idx:
+        if curr_guess_evaluation < 0:
+            # The guess was too big => Look to the left next:
+            higher_idx = curr_guess_idx
+            curr_guess_idx = int(math.floor((lower_idx + higher_idx) / 2.0))
         else:
-            # Correct guess lies somewhere between the current guess
-            # and the start:
-            new_guess_idx = curr_guess_idx // 2
+            assert curr_guess_evaluation > 0
+            # The guess was too small => Look to the right next:
+            lower_idx = curr_guess_idx
+            prev_guess_idx = curr_guess_idx
+            curr_guess_idx = int(math.ceil((lower_idx + higher_idx) / 2.0))
 
-    else:
-        # Current guess is too small.
+        # Make a new guess:
+        curr_guess = reads[curr_guess_idx]
+        curr_guess_evaluation = evaluate_guess(curr_guess, read)
 
-        assert next_guess_direction > 0
+    if evaluate_guess(curr_guess, read) != 0:
+        return -1
 
-        if prev_guess_idx > curr_guess_idx:
-            # Correct guess lies somewhere between the current and
-            # previous guess:
-            new_guess_idx = (curr_guess_idx + prev_guess_idx) // 2
-        else:
-            # Calculate new guess as halfway between current and the end:
-            new_guess_idx = (curr_guess_idx + len(reads)) // 2
-
-    assert new_guess_idx != -1
-
-    return find_pair_idx(read, reads, new_guess_idx, curr_guess_idx)
+    return curr_guess_idx
 
 
-def read_density(reads, read_idx, interval_size = 10):
+def nearby_read_median_dist(reads, read_idx, interval_size = 10):
     """Returns a measure of read density at the specified read_idx in the specified
     sorted list of reads. Specifically, computes the median distance of all nearby
     reads within the specified interval."""
@@ -364,28 +362,33 @@ def clust_filt(reads):
 
     idx = 0
     filtered_reads = []
-    for read_idx in range(len(reads)):
+    for read_idx in tqdm(range(len(reads))):
         read = reads[read_idx]
 
-        initial_guess_idx = len(reads) // 2
-        paired_read_idx = find_pair_idx(read, reads, initial_guess_idx, initial_guess_idx)
-        if read_density(reads, read_idx) < read_density(reads, paired_read_idx):
-            # NOTE: The choice of whether to iterate at the read's position or it's paired
-            # read's position should not influence the outcome of this algorithm, but
-            # it may dramatically affect running time (this is why I do this).
-
-            # Higher density of reads at this read position => Iterate over the
-            # original read's region when counting read pair matches:
-            if (read_pair_has_enough_matching_pairs(reads, read_idx)):
-                filtered_reads.append(read)
+        paired_read_idx = find_pair_idx(read, reads)
+        if paired_read_idx == -1:
+            logging.warning("Paired read was not found for read: {}".format(str(read)))
+            paired_nearby_read_dist = 0
         else:
-            # Iterate over the paired read's region instead, since the original read's
-            # region does not have lower read density:
+            paired_nearby_read_dist = nearby_read_median_dist(reads, paired_read_idx)
+
+        local_nearby_read_dist = nearby_read_median_dist(reads, read_idx)
+
+        # NOTE: The choice of whether to iterate at the read's position or it's paired
+        # read's position should not influence the outcome of this algorithm, but
+        # it may dramatically affect running time (this is why I do this).
+
+        if local_nearby_read_dist < paired_nearby_read_dist:
+            # Reads appear to be more densely packed in at this read position
+            # => Iterate over the paired read's region when counting read pair matches:
             if (read_pair_has_enough_matching_pairs(reads, paired_read_idx)):
                 filtered_reads.append(read)
+        else:
+            # Iterate over the original read's region instead, since reads
+            # seem to be less dense at this region:
+            if (read_pair_has_enough_matching_pairs(reads, read_idx)):
+                filtered_reads.append(read)
 
-        if idx % 1000 == 0:
-            print(idx, file=sys.stderr)
         idx += 1
 
     # Finally, filter to only retain reads where both reads in the pair are
@@ -479,12 +482,20 @@ class SoftClipping:
         else:
             return True'''
 
+        comment = '''
+        try:
+            chrom_as_int = int(chrom)
+            if chrom_as_int > 60:
+                import pdb; pdb.set_trace()
+                dummy = 1
+        except Exception:
+            pass'''
+
         pos_tup = softclip.getRefMatchPos(chrom, start, end, self._seq, fasta_filename)
         if pos_tup != None:
             self._chrom = pos_tup[0]
             self._start = pos_tup[1]
             self._end = pos_tup[2]
-            print(pos_tup, file=sys.stderr)
 
         # Sequence alignment-based approach:
         return pos_tup != None
@@ -938,7 +949,7 @@ def call_events(filtered_reads, fasta_filename):
     putative_events = define_events(clusters, read2cluster, read2mate)
 
     # Mark each putative event with soft-clipping information of the reads contained in it:
-    for event in putative_events:
+    for event in tqdm(putative_events):
         event.check_soft_clipping(fasta_filename)
 
     return putative_events
