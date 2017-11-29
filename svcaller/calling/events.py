@@ -940,15 +940,19 @@ def call_events(filtered_reads, fasta_filename):
     and then by position.'''
 
     # Detect overlapping read clusters...
+    logging.info("Detecting clusters...")
     clusters = detect_clusters(filtered_reads)
 
     # Pair up the clusters:
+    logging.info("Pairing clusters...")
     (read2cluster, read2mate) = pair_clusters(clusters)
 
     # Define the events, using those pairings:
+    logging.info("Defining putative events...")
     putative_events = define_events(clusters, read2cluster, read2mate)
 
     # Mark each putative event with soft-clipping information of the reads contained in it:
+    logging.info("Checking soft-clipping for all putative events...")
     for event in tqdm(putative_events):
         event.check_soft_clipping(fasta_filename)
 

@@ -194,6 +194,7 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
 
     # Call events:
     pybedtools.set_tempdir(tmp_dir) # Necessary to control temporary folder usage during event calling
+    logging.info("Calling initial events...")
     events = list(call_events(filtered_reads, fasta_filename))
 
     # Filter on discordant read support depth:
