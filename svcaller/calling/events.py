@@ -269,20 +269,29 @@ def find_pair_idx(read, reads):
     curr_guess = reads[curr_guess_idx]
     curr_guess_evaluation = evaluate_guess(curr_guess, read)
 
+    # FIXME: This binary search code could be cleaned up / improved.
+
+    # FIXME: This in particular is quite nasty; used to prevent infinite
+    # switching:
+    prev_prev_guess_idx = -1
     prev_guess_idx = -1
 
     # Perform binary search to find a read that matches the read pair
     # characteristics of the specified read:
     while (curr_guess_evaluation != 0) and \
-        curr_guess_idx != prev_guess_idx:
+        curr_guess_idx != prev_guess_idx and \
+        curr_guess_idx != prev_prev_guess_idx:
         if curr_guess_evaluation < 0:
             # The guess was too big => Look to the left next:
             higher_idx = curr_guess_idx
+            prev_prev_guess_idx = prev_guess_idx
+            prev_guess_idx = curr_guess_idx
             curr_guess_idx = int(math.floor((lower_idx + higher_idx) / 2.0))
         else:
             assert curr_guess_evaluation > 0
             # The guess was too small => Look to the right next:
             lower_idx = curr_guess_idx
+            prev_prev_guess_idx = prev_guess_idx
             prev_guess_idx = curr_guess_idx
             curr_guess_idx = int(math.ceil((lower_idx + higher_idx) / 2.0))
 
