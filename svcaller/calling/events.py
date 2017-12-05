@@ -116,7 +116,12 @@ def event_termini_spaced_broadly(event):
 def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
     filtered_reads = []
     for read in tqdm(read_iter):
-        if not read.flag & flag_filter:
+        max_ref_id = 23
+        # FIXME: This includes a filter for restricting to chroms 1->22 + X and Y in human. This
+        # filter should better documented. This filter is important as it can have a substantial
+        # impact on performance during the final event calling step in some cases.
+        if (not read.flag & flag_filter) and \
+            (read.reference_id <= max_ref_id or read.next_reference_id <= max_ref_id):
             # This read passes the general bit-wise filter.
             # Apply the event-specific bit-wise flag field and other field
             # filters:
