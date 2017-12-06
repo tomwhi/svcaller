@@ -883,6 +883,14 @@ class GenomicEvent:
 
         return t1_gtf + t2_gtf + self.get_softclip_gtf()
 
+    def get_read_mapqs(self):
+        """
+        :return: A list of the mapping quality values of the reads in this event, in no particular
+        order.
+        """
+
+        return [read.mapping_quality for read in self._terminus1_reads + self._terminus2_reads]
+
     # Hack: Generate an event-name based on the coordinates:
     def get_event_name(self):
         t1_chrom = self._terminus1_reads[0].rname
@@ -949,6 +957,16 @@ def define_events(clusters, read2cluster, read2mate):
     return events
 
 
+def max_qual(genomic_event):
+    """
+    Returns the maximum observed mapping quality value from amongst all this genomic event's reads.
+    :param genomic_event: A GenomicEvent object
+    :return: Integer value indicating the maximum observed mapping quality
+    """
+
+    return max(genomic_event.get_read_mapqs())
+
+
 def call_events(filtered_reads, fasta_filename):
     '''Call events on the input reads. The reads must be sorted by chromosome
     and then by position.'''
@@ -964,6 +982,11 @@ def call_events(filtered_reads, fasta_filename):
     # Define the events, using those pairings:
     logging.info("Defining putative events...")
     putative_events = define_events(clusters, read2cluster, read2mate)
+
+    # Do an initial filter to exclude events where *all* reads have a mapq value of zero.
+    # This is done here as it can greatly reduce an otherwise extreme time burden from
+    # checking all of the events' soft-clipping information:
+    putative_events = [event for event in putative_events if max_qual(event) > 0]
 
     # Mark each putative event with soft-clipping information of the reads contained in it:
     logging.info("Checking soft-clipping for all putative events...")
