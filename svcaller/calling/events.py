@@ -122,7 +122,7 @@ def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
         # filter should better documented. This filter is important as it can have a substantial
         # impact on performance during the final event calling step in some cases.
         if (not read.flag & flag_filter) and \
-            (read.reference_id <= max_ref_id or read.next_reference_id <= max_ref_id):
+            (read.reference_id <= max_ref_id and read.next_reference_id <= max_ref_id):
             # This read passes the general bit-wise filter.
             # Apply the event-specific bit-wise flag field and other field
             # filters:
