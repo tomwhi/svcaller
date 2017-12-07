@@ -1,8 +1,10 @@
 import logging, os, tempfile, uuid
+from collections import defaultdict
 
 import click
 import pysam
 import pybedtools
+import itertools
 
 from svcaller.calling.events import SvType
 from svcaller.calling.events import event_filt, clust_filt, call_events, \
@@ -33,7 +35,7 @@ def run_all_cmd(input_bam, event_type, fasta_filename, events_gtf, events_bam,
     unique_id = uuid.uuid4()
     logging.info("Applying event-specific filter...")
     event_filt_reads_bam_name = "{}/{}_event_filter_{}.bam".format(tmp_dir, unique_id, event_type)
-    event_filter_inner(event_type, event_filt_reads_bam_name, input_bam)
+    event_filter_inner(event_type, event_filt_reads_bam_name, input_bam, tmp_dir)
 
     logging.info("Applying read-cluster filter...")
     clust_filt_reads_bam_name = "{}/{}_cluster_filter_{}.bam".format(tmp_dir, unique_id, event_type)
@@ -51,10 +53,10 @@ def run_all_cmd(input_bam, event_type, fasta_filename, events_gtf, events_bam,
 @click.command()
 @click.option('--event-type', type=click.Choice([SvType.DEL.value, SvType.INV.value, SvType.TRA.value, SvType.DUP.value]), required=True)
 @click.option('--output-bam', type=str, default="event_filtered_reads.bam", required=False)
+@click.option('--tmp-dir', type=str, default = "/tmp", required=False)
 @click.argument('input-bam', type=click.Path(exists=True))
-def event_filter_cmd(event_type, output_bam, input_bam):
-    logging.info("TRACE: HERE.")
-    event_filter_inner(event_type, output_bam, input_bam)
+def event_filter_cmd(event_type, output_bam, input_bam, tmp_dir):
+    event_filter_inner(event_type, output_bam, input_bam, tmp_dir)
 
 
 def parse_xa_tok(tok):
@@ -134,7 +136,7 @@ def no_parsimonious_alternative_mappings(read):
     return True
 
 
-def event_filter_inner(event_type, output_bam, input_bam):
+def event_filter_inner(event_type, output_bam, input_bam, tmp_dir):
     logging.info("Running event filter: {}".format(event_type))
 
     samfile = pysam.AlignmentFile(input_bam, "rb")
@@ -143,13 +145,26 @@ def event_filter_inner(event_type, output_bam, input_bam):
     # Impose an additional filter, to throw away reads where the read pair
     # includes an alternative mapping that does not require a structural variant
     # in order to be explained:
-    extra_filtered_reads = list(filter(lambda read: no_parsimonious_alternative_mappings(read),
-                                       event_filtered_reads))
+    name2read_pair = defaultdict(list)
+    for read in event_filtered_reads:
+        if no_parsimonious_alternative_mappings(read):
+            name2read_pair[read.qname].append(read)
 
-    with pysam.AlignmentFile(output_bam, "wb", header=samfile.header) as outf:
+    readnames_to_keep = [name for name in name2read_pair.keys() if len(name2read_pair[name]) == 2]
+    extra_filtered_reads = list(itertools.chain.from_iterable(
+        [name2read_pair[read] for read in readnames_to_keep]))
+
+    # Write to a temporary bam file, to facilitate subsequent sorting with pysam. NOTE:
+    # Could do sorting in memory since the read count should be low, but it seems less
+    # bug-prone to use pysam's sort functionality:
+    unique_id = uuid.uuid4()
+    tmp_bam_filename = "{}/event_bamfile_for_sorting_{}.bam".format(tmp_dir, unique_id, event_type)
+    with pysam.AlignmentFile(tmp_bam_filename, "wb", header=samfile.header) as outf:
         for read in extra_filtered_reads:
             outf.write(read)
 
+    # Sort the intermediate bam file with samtools to produce the final output bam file, then index it:
+    pysam.sort("-o", output_bam, tmp_bam_filename)
     pysam.index(str(output_bam))
 
 
@@ -195,28 +210,11 @@ def call_events_inner(filtered_bam, event_type, fasta_filename, events_gff, even
     # Call events:
     pybedtools.set_tempdir(tmp_dir) # Necessary to control temporary folder usage during event calling
     logging.info("Calling initial events...")
-    events = list(call_events(filtered_reads, fasta_filename))
-
-    # Filter on discordant read support depth:
-    logging.info("Filtering on discordant read support depth...")
-    filtered_events = list(filter(lambda event: (len(event._terminus1_reads) >= 3 and len(event._terminus2_reads) >= 3), events))
-
-    # Filter on maximum quality of terminus reads:
-    logging.info("Filtering on max quality of terminus reads...")
-    filtered_events = list(filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19), filtered_events))
-
-    logging.info("Filtering on terminus read spacing...")
-    filtered_events = list(filter(lambda event: event_termini_spaced_broadly(event), filtered_events))
-
-    if filter_event_overlap:
-        # Filter on event terminus sharing (exclude any events that have
-        # overlapping termini):
-        logging.info("Filtering on terminus event sharing...")
-        filtered_events = filter_on_shared_termini(filtered_events)
+    events = list(call_events(filtered_reads, fasta_filename, filter_event_overlap))
 
     # Filter on soft-clipping support:
     logging.info("Filtering on soft-clip support...")
-    filtered_events = list(filter(lambda event: event.has_soft_clip_support(), filtered_events))
+    filtered_events = list(filter(lambda event: event.has_soft_clip_support(), events))
 
     # Optionally filter on presence of soft-clipped regions scattered throughout the reads, depending on
     # the event type:

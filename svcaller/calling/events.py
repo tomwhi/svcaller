@@ -6,6 +6,7 @@ from collections import defaultdict
 from enum import Enum
 import pandas as pd
 from tqdm import tqdm
+import itertools
 
 
 import svcaller.calling.softclip as softclip
@@ -419,10 +420,8 @@ def paired_filt(reads):
 
 
 def get_readname2reads(reads):
-    readname2reads = {}
+    readname2reads = defaultdict(list)
     for read in reads:
-        if not read.qname in readname2reads:
-            readname2reads[read.qname] = []
         readname2reads[read.qname].append(read)
 
     return readname2reads
@@ -437,27 +436,31 @@ def pair_clusters(clusters):
 
     # FIXME: A bunch of hacky code to get the data structures required for
     # efficient processing of this data. Could be error-prone / hard to read:
-    reads = []
-    for cluster in clusters:
-        reads = reads + list(cluster.get_reads())
-
-    read2cluster = {}
-    for cluster in clusters:
-        for read in list(cluster.get_reads()):
-            read2cluster[read] = cluster
+    reads_for_clusters = [list(cluster.get_reads()) for cluster in clusters]
+    reads = list(itertools.chain.from_iterable(reads_for_clusters))
 
     readname2reads = get_readname2reads(reads)
 
     read2mate = {}
-    for read in reads:
+    for read in tqdm(reads):
         all_reads_with_this_name = readname2reads[read.qname]
         other_reads = list(filter(lambda curr_read: curr_read != read, all_reads_with_this_name))
-        assert len(other_reads) == 1
-        read2mate[read] = other_reads[0]
+        if len(other_reads) == 1:
+            read2mate[read] = other_reads[0]
+        else:
+            import pdb; pdb.set_trace()
+            logging.warning("Paired read was not present during pairing, for read: {}".format(str(read)))
+
+    reads_with_mate = [read for read in reads if read in read2mate]
+
+    read2cluster = {}
+    for cluster in tqdm(clusters):
+        for read in list(cluster.get_reads()):
+            read2cluster[read] = cluster
 
     # Update each cluster, to indicate a pairing to each other cluster that the mate-pair
     # belongs to, for all mate-pairs of reads in this cluster (hope that makes sense!):
-    for cluster in clusters:
+    for cluster in tqdm(clusters):
         cluster.set_pairings(read2mate, read2cluster)
 
     # FIXME: This is getting messy:
@@ -957,17 +960,20 @@ def define_events(clusters, read2cluster, read2mate):
     return events
 
 
-def max_qual(genomic_event):
+def fraction_maqs_over_zero(genomic_event):
     """
     Returns the maximum observed mapping quality value from amongst all this genomic event's reads.
     :param genomic_event: A GenomicEvent object
     :return: Integer value indicating the maximum observed mapping quality
     """
 
-    return max(genomic_event.get_read_mapqs())
+    mapqs = genomic_event.get_read_mapqs()
+    fraction_non_zero = sum([mapq_val > 0 for mapq_val in mapqs])/len(mapqs)
+
+    return fraction_non_zero
 
 
-def call_events(filtered_reads, fasta_filename):
+def call_events(filtered_reads, fasta_filename, filter_event_overlap):
     '''Call events on the input reads. The reads must be sorted by chromosome
     and then by position.'''
 
@@ -983,14 +989,38 @@ def call_events(filtered_reads, fasta_filename):
     logging.info("Defining putative events...")
     putative_events = define_events(clusters, read2cluster, read2mate)
 
-    # Do an initial filter to exclude events where *all* reads have a mapq value of zero.
+    # Note: Now running these filtering steps earlier in order to shorten the expensive
+    # soft-clipping check that follows.
+
+    # Filter putative events on maximum quality of terminus reads:
+    logging.info("Filtering on max quality of terminus reads...")
+    filtered_putative_events = list(filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19),
+                                           putative_events))
+
+    # Filter on discordant read support depth:
+    logging.info("Filtering on discordant read support depth...")
+    filtered_putative_events = \
+        list(filter(lambda event: (len(event._terminus1_reads) >= 3 and len(event._terminus2_reads) >= 3),
+                    filtered_putative_events))
+
+    logging.info("Filtering on terminus read spacing...")
+    filtered_putative_events = list(filter(lambda event: event_termini_spaced_broadly(event),
+                                           filtered_putative_events))
+
+    if filter_event_overlap:
+        # Filter on event terminus sharing (exclude any events that have
+        # overlapping termini):
+        logging.info("Filtering on terminus event sharing...")
+        filtered_putative_events = filter_on_shared_termini(filtered_putative_events)
+
+    # Do an initial filter to exclude events where > 1% of reads must have a non-zero mapq value.
     # This is done here as it can greatly reduce an otherwise extreme time burden from
     # checking all of the events' soft-clipping information:
-    putative_events = [event for event in putative_events if max_qual(event) > 0]
+    #putative_events = [event for event in putative_events if fraction_maqs_over_zero(event) > mapq_zero_thresh]
 
     # Mark each putative event with soft-clipping information of the reads contained in it:
     logging.info("Checking soft-clipping for all putative events...")
-    for event in tqdm(putative_events):
+    for event in tqdm(filtered_putative_events):
         event.check_soft_clipping(fasta_filename)
 
     return putative_events
@@ -1164,7 +1194,7 @@ def detect_clusters_single_strand(clusters, reads, prev_read_extn=0):
     prev_read_end_pos = 0
     curr_cluster = None
 
-    for read in reads:
+    for read in tqdm(reads):
         # Detect if the read is on a different chromosome, or if it does not
         # overlap the previous read
         if read.rname != prev_read_chrom or \
