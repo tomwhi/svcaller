@@ -1,13 +1,22 @@
 # coding=utf-8
-from datetime import datetime
-import functools, logging, sys
-import svcaller.cli.calling.softclip as softclip
+import functools
+import logging
+import math, statistics, sys
 from collections import defaultdict
+from enum import Enum
+import pandas as pd
+from tqdm import tqdm
+import itertools
 
-DEL = "DEL"
-INV = "INV"
-TRA = "TRA"
-DUP = "DUP"
+
+import svcaller.calling.softclip as softclip
+
+
+class SvType(Enum):
+    DEL = "DEL"
+    INV = "INV"
+    TRA = "TRA"
+    DUP = "DUP"
 
 
 def calc_cigar_bps(cigar_tup):
@@ -107,18 +116,23 @@ def event_termini_spaced_broadly(event):
 
 def event_filt(read_iter, event_type, flag_filter=4+8+256+1024+2048):
     filtered_reads = []
-    for read in read_iter:
-        if not read.flag & flag_filter:
+    for read in tqdm(read_iter):
+        max_ref_id = 23
+        # FIXME: This includes a filter for restricting to chroms 1->22 + X and Y in human. This
+        # filter should better documented. This filter is important as it can have a substantial
+        # impact on performance during the final event calling step in some cases.
+        if (not read.flag & flag_filter) and \
+            (read.reference_id <= max_ref_id and read.next_reference_id <= max_ref_id):
             # This read passes the general bit-wise filter.
             # Apply the event-specific bit-wise flag field and other field
             # filters:
-            if event_type == DEL:
+            if event_type == SvType.DEL.value:
                 del_filt(filtered_reads, read)
-            elif event_type == INV:
+            elif event_type == SvType.INV.value:
                 inv_filt(filtered_reads, read)
-            elif event_type == TRA:
+            elif event_type == SvType.TRA.value:
                 tra_filt(filtered_reads, read)
-            elif event_type == DUP:
+            elif event_type == SvType.DUP.value:
                 dup_filt(filtered_reads, read)
             else:
                 logging.error("Invalid event_type: " + event_type)
@@ -180,65 +194,216 @@ def chrom_int2str(chrom_int):
     return chrom_str
 
 
-def clust_filt(read_iter, samfile, chrom_of_interest=22):
-    '''Filter the input reads to only retain those read-pairs where there are other read-pairs with
-    similar coordinates. This is an ugly implementation, needs refactoring.
+def get_nearby_reads(reads, read_idx, dist_thresh):
+    read = reads[read_idx]
 
-    chrom_of_interest is a chromosome that is expected to contain
-    more reads than the other chromosomes.'''
+    half_read_len = int((len(read.seq) / 2.0))
+
+    nearby_min = read.pos + half_read_len - dist_thresh
+    nearby_max = read.pos + half_read_len + dist_thresh
+
+    nearby_reads = []
+    curr_lower_idx = read_idx - 1
+    lower_past_min = False
+    while curr_lower_idx > 0 and not lower_past_min:
+        curr_lower_read = reads[curr_lower_idx]
+        if curr_lower_read.pos < nearby_min or curr_lower_read.rname != read.rname:
+            lower_past_min = True
+        else:
+            nearby_reads.append(curr_lower_read)
+        curr_lower_idx = curr_lower_idx - 1
+
+    curr_higher_idx = read_idx + 1
+    higher_past_max = False
+    while curr_higher_idx < len(reads) and not higher_past_max:
+        curr_higher_read = reads[curr_higher_idx]
+        if curr_higher_read.pos > nearby_max or curr_higher_read.rname != read.rname:
+            higher_past_max = True
+        else:
+            nearby_reads.append(curr_higher_read)
+        curr_higher_idx = curr_higher_idx + 1
+
+    # Only consider reads nearby that are not optical/pcr duplicates and that are not secondary alignments
+    # (hence the flag filter):
+    return [nearby_read for nearby_read in nearby_reads if nearby_read.flag < 1024]
+
+
+def evaluate_guess(guessed_read, read):
+    """Evaluate a guessed read in the context of a binary search for
+    a specified target read's pair.
+
+    :param guessed_read: AlignedSegment object indicating a guess
+    :param read: AlignedSegment object indicating the read for which we wish
+        to find the pair.
+    :return: -1 if the guess is too big (either by chromosome or position)
+             0 if the guess is correct
+             1 if the guess is too small
+    """
+
+    # FIXME: Refactor: Seems like there should be a more elegant/bug-proof
+    # way to do this:
+    if guessed_read.reference_id == read.next_reference_id:
+        if guessed_read.reference_start == read.next_reference_start:
+            return 0
+        elif guessed_read.reference_start > read.next_reference_start:
+            return -1
+        else:
+            assert guessed_read.reference_start < read.next_reference_start
+            return 1
+    elif guessed_read.reference_id > read.next_reference_id:
+        return -1
+    else:
+        assert guessed_read.reference_id < read.next_reference_id
+        return 1
+
+
+def find_pair_idx(read, reads):
+    """
+    Find the read pair of the the specified read amongst the sorted list of reads,
+    in logarithmic time, and return it's index in that list. Returns -1 if the
+    read's read pair is not amongst the specified reads:
+
+    :param read: AlignedSegment object
+    :param reads: Sorted list of AlignedSegment objects
+    :return: Integer index value of the paired read
+    """
+
+    lower_idx = 0
+    higher_idx = len(reads) - 1
+    curr_guess_idx = (lower_idx + higher_idx) // 2
+
+    curr_guess = reads[curr_guess_idx]
+    curr_guess_evaluation = evaluate_guess(curr_guess, read)
+
+    # FIXME: This binary search code could be cleaned up / improved.
+
+    # FIXME: This in particular is quite nasty; used to prevent infinite
+    # switching:
+    prev_prev_guess_idx = -1
+    prev_guess_idx = -1
+
+    # Perform binary search to find a read that matches the read pair
+    # characteristics of the specified read:
+    while (curr_guess_evaluation != 0) and \
+        curr_guess_idx != prev_guess_idx and \
+        curr_guess_idx != prev_prev_guess_idx:
+        if curr_guess_evaluation < 0:
+            # The guess was too big => Look to the left next:
+            higher_idx = curr_guess_idx
+            prev_prev_guess_idx = prev_guess_idx
+            prev_guess_idx = curr_guess_idx
+            curr_guess_idx = int(math.floor((lower_idx + higher_idx) / 2.0))
+        else:
+            assert curr_guess_evaluation > 0
+            # The guess was too small => Look to the right next:
+            lower_idx = curr_guess_idx
+            prev_prev_guess_idx = prev_guess_idx
+            prev_guess_idx = curr_guess_idx
+            curr_guess_idx = int(math.ceil((lower_idx + higher_idx) / 2.0))
+
+        # Make a new guess:
+        curr_guess = reads[curr_guess_idx]
+        curr_guess_evaluation = evaluate_guess(curr_guess, read)
+
+    if evaluate_guess(curr_guess, read) != 0:
+        return -1
+
+    return curr_guess_idx
+
+
+def nearby_read_median_dist(reads, read_idx, interval_size = 10):
+    """Returns a measure of read density at the specified read_idx in the specified
+    sorted list of reads. Specifically, computes the median distance of all nearby
+    reads within the specified interval."""
+
+    interval_min = max(0, read_idx - interval_size)
+    interval_max = min(len(reads), read_idx + interval_size)
+
+    reads_in_interval = reads[interval_min:interval_max]
+
+    # Filter for reads on the same chromosome:
+    reads_on_same_chrom = [read for read in reads_in_interval
+                           if read.reference_id == reads[read_idx].reference_id]
+
+    # Compute all read distances and return the median value:
+    dists = [abs(read.reference_start - reads[read_idx].reference_start)
+             for read in reads_on_same_chrom]
+
+    return statistics.median(dists)
+
+
+def read_pair_has_enough_matching_pairs(reads, read_idx):
+    """
+    Determine whether there are enough matching read pairs, which must have
+    coordinates matching those of the read pair specified by the given
+    read_idx value.
+
+    :param reads: Sorted list of AlignedSegment objects
+    :param read_idx: Integer index identifying a read, and also it's pair
+    :return: Boolean value indicating whether there are enough matches
+    """
+
+    reads_nearby_non_unique = get_nearby_reads(reads, read_idx, 200)
+    read = reads[read_idx]
+    half_read_len = int((len(read.seq) / 2.0))
+
+    reads_nearby_dict = {}
+    for curr_read in reads_nearby_non_unique:
+        if curr_read.qname not in reads_nearby_dict:
+            reads_nearby_dict[curr_read.qname] = curr_read
+
+    reads_nearby = reads_nearby_dict.values()
+
+    paired_matches = 0
+    for read_nearby in reads_nearby:
+        read_nearby_pair_chrom = read_nearby.rnext
+        if read_nearby_pair_chrom == read.rnext and \
+            read.pnext + half_read_len - 1000 < read_nearby.pnext + half_read_len \
+            < read.pnext + half_read_len + 1000:
+            paired_matches += 1
+
+    return paired_matches >= 2
+
+
+def clust_filt(reads):
+    """
+    Filter the input reads to only retain those read-pairs where there are other read-pairs with
+    similar coordinates.
+
+    :param reads: A list of pysam AlignedSegment objects representing the reads
+    to be filtered. Must be ordered according to chromosomal position.
+    :return: A list of filtered reads.
+    """
+
     idx = 0
     filtered_reads = []
-    for read in read_iter:
-        half_read_len = int((len(read.seq)/2.0))
+    for read_idx in tqdm(range(len(reads))):
+        read = reads[read_idx]
 
-        # Determine which of the reads (for this read-pair) will be used to identify
-        # nearby read-pairs: We could look at this read, or it's mate-pair.
-        base_read_chrom = read.rname
-        base_read_pos = read.pos
-        other_read_chrom = read.rnext
-        other_read_pos = read.pnext
+        paired_read_idx = find_pair_idx(read, reads)
+        if paired_read_idx == -1:
+            logging.warning("Paired read was not found for read: {}".format(str(read)))
+            paired_nearby_read_dist = 0
+        else:
+            paired_nearby_read_dist = nearby_read_median_dist(reads, paired_read_idx)
 
-        # PROBLEM: This is a hack making the analysis focused on the X-chromosome.
-        # Need to revisit the problem and figure out a more general solution.
+        local_nearby_read_dist = nearby_read_median_dist(reads, read_idx)
 
-        if base_read_chrom == 22:
-            base_read_chrom = read.rnext
-            base_read_pos = read.pnext
-            other_read_chrom = read.rname
-            other_read_pos = read.pos
+        # NOTE: The choice of whether to iterate at the read's position or it's paired
+        # read's position should not influence the outcome of this algorithm, but
+        # it may dramatically affect running time (this is why I do this).
 
-        base_read_chrom_str = chrom_int2str(base_read_chrom)
-
-        try:
-            # Only consider reads nearby that are not optical/pcr duplicates and that are not secondary alignments
-            # (hence the flag filter):
-            reads_nearby_non_unique = [r for r in samfile.fetch(base_read_chrom_str,
-                base_read_pos+half_read_len-200,
-                base_read_pos+half_read_len+200) if r.flag < 1024]
-
-            reads_nearby_dict = {}
-            for curr_read in reads_nearby_non_unique:
-                if not curr_read.qname in reads_nearby_dict:
-                    reads_nearby_dict[curr_read.qname] = curr_read
-
-            reads_nearby = reads_nearby_dict.values()
-
-            paired_matches = 0
-            for read_nearby in reads_nearby:
-                read_nearby_pair_chrom = read_nearby.rnext
-                if read_nearby_pair_chrom == other_read_chrom and \
-                   other_read_pos+half_read_len-1000 < read_nearby.pnext+half_read_len and \
-                   other_read_pos+half_read_len+1000 > read_nearby.pnext+half_read_len:
-                    paired_matches += 1
-
-            if paired_matches >= 2:
+        if local_nearby_read_dist < paired_nearby_read_dist:
+            # Reads appear to be more densely packed in at this read position
+            # => Iterate over the paired read's region when counting read pair matches:
+            if (read_pair_has_enough_matching_pairs(reads, paired_read_idx)):
+                filtered_reads.append(read)
+        else:
+            # Iterate over the original read's region instead, since reads
+            # seem to be less dense at this region:
+            if (read_pair_has_enough_matching_pairs(reads, read_idx)):
                 filtered_reads.append(read)
 
-        except Exception:
-            pass
-
-        if idx % 1000 == 0:
-            print(idx, file=sys.stderr)
         idx += 1
 
     # Finally, filter to only retain reads where both reads in the pair are
@@ -255,10 +420,8 @@ def paired_filt(reads):
 
 
 def get_readname2reads(reads):
-    readname2reads = {}
+    readname2reads = defaultdict(list)
     for read in reads:
-        if not read.qname in readname2reads:
-            readname2reads[read.qname] = []
         readname2reads[read.qname].append(read)
 
     return readname2reads
@@ -273,27 +436,31 @@ def pair_clusters(clusters):
 
     # FIXME: A bunch of hacky code to get the data structures required for
     # efficient processing of this data. Could be error-prone / hard to read:
-    reads = []
-    for cluster in clusters:
-        reads = reads + list(cluster.get_reads())
-
-    read2cluster = {}
-    for cluster in clusters:
-        for read in list(cluster.get_reads()):
-            read2cluster[read] = cluster
+    reads_for_clusters = [list(cluster.get_reads()) for cluster in clusters]
+    reads = list(itertools.chain.from_iterable(reads_for_clusters))
 
     readname2reads = get_readname2reads(reads)
 
     read2mate = {}
-    for read in reads:
+    for read in tqdm(reads):
         all_reads_with_this_name = readname2reads[read.qname]
         other_reads = list(filter(lambda curr_read: curr_read != read, all_reads_with_this_name))
-        assert len(other_reads) == 1
-        read2mate[read] = other_reads[0]
+        if len(other_reads) == 1:
+            read2mate[read] = other_reads[0]
+        else:
+            import pdb; pdb.set_trace()
+            logging.warning("Paired read was not present during pairing, for read: {}".format(str(read)))
+
+    reads_with_mate = [read for read in reads if read in read2mate]
+
+    read2cluster = {}
+    for cluster in tqdm(clusters):
+        for read in list(cluster.get_reads()):
+            read2cluster[read] = cluster
 
     # Update each cluster, to indicate a pairing to each other cluster that the mate-pair
     # belongs to, for all mate-pairs of reads in this cluster (hope that makes sense!):
-    for cluster in clusters:
+    for cluster in tqdm(clusters):
         cluster.set_pairings(read2mate, read2cluster)
 
     # FIXME: This is getting messy:
@@ -332,12 +499,20 @@ class SoftClipping:
         else:
             return True'''
 
+        comment = '''
+        try:
+            chrom_as_int = int(chrom)
+            if chrom_as_int > 60:
+                import pdb; pdb.set_trace()
+                dummy = 1
+        except Exception:
+            pass'''
+
         pos_tup = softclip.getRefMatchPos(chrom, start, end, self._seq, fasta_filename)
         if pos_tup != None:
             self._chrom = pos_tup[0]
             self._start = pos_tup[1]
             self._end = pos_tup[2]
-            print(pos_tup, file=sys.stderr)
 
         # Sequence alignment-based approach:
         return pos_tup != None
@@ -469,7 +644,7 @@ def get_softclip_bounds(soft_clippings):
         return []
 
 
-def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
+def check_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
     '''Examine soft-clipping of all reads in reads2, to see if any of the
     soft-clipped coordinates are consistent with the specified coordinates.'''
 
@@ -495,6 +670,78 @@ def test_matched_soft_clipping(chrom, start, end, reads2, fasta_filename):
     # from the above set:
     consensus_soft_clippings = get_softclip_bounds(consistent_soft_clippings)
     return consensus_soft_clippings
+
+
+def get_read_strand(read):
+    strand = "+"
+    if read.flag & 16:
+        strand = "-"
+    return strand
+
+
+# FIXME: Perhaps should introduce a NamedTuple representing terminus info, but
+# then this would be redundant with the existing genomic event class.
+def extract_terminus_info(row):
+    """
+    Extract sv terminus info from a gtf file row.
+
+    :param row: pandas Series object or similar containing sv info
+    accessible by key
+    :return: Tuple of extracted info
+    """
+
+    terminus_pos = row["end"]
+    if row["strand"] == "-":
+        terminus_pos = row["start"]
+
+    return (row["chrom"], terminus_pos, row["score"], row["strand"])
+
+
+def extract_bed_data(group, event_type):
+    assert len(group) == 2
+    bed_data = []
+
+    (t1, t2) = tuple([extract_terminus_info(row) for _, row in group.iterrows()])
+
+    if t1[0] != t2[0]:
+        assert event_type == SvType.TRA
+        # Represent each terminus as a separate bed item:
+        bed_data.append([t1[0], t1[1], t1[1], event_type.value, t1[2], t1[3]])
+        bed_data.append([t2[0], t2[1], t2[1], event_type.value, t2[2], t2[3]])
+    else:
+        terminus_positions = [t1[1], t2[1]]
+        start = min(terminus_positions)
+        end = max(terminus_positions)
+        strand = None
+        if t1[3] == t2[3]:
+            strand = t1[3]
+        bed_data.append([t1[0], start, end, event_type.value, t1[2], strand])
+
+    return pd.DataFrame(bed_data)
+
+
+def read_sv_gtf(sv_gtf_file, event_type):
+    """
+    Read a structural variants gtf file and generate a bed-format compatible table
+    representing the event coordinates.
+
+    :param sv_gtf_file: An open gtf-formatted file containing structural variant calls
+    :param event_type: An SvType enumeration value specifying the structural variant type
+    :return: A data frame containing the structural variant calls
+    """
+
+    names = ["chrom", "source", "feature", "start", "end", "score", "strand", "frame", "attribute"]
+    gtf_file_df = pd.read_table(sv_gtf_file, sep="\t", header=None, index_col=None, names=names)
+    gtf_file_termini = gtf_file_df.loc[gtf_file_df["feature"] == "exon", :].copy()
+    event_names = gtf_file_termini["attribute"].apply(
+        lambda attribute: attribute.split(" ")[1].replace("\"", "").replace(";", ""))
+    gtf_file_termini["event_names"] = event_names
+    groups = gtf_file_termini.groupby("event_names")
+
+    def bed_extractor(group):
+        return extract_bed_data(group, event_type)
+
+    return groups.apply(bed_extractor)
 
 
 class GenomicEvent:
@@ -531,6 +778,12 @@ class GenomicEvent:
     def get_t1_mapqual(self):
         mapqual = max(list(map(lambda read: read.mapq, self._terminus1_reads)))
         return mapqual
+
+    def get_t1_strand(self):
+        return get_read_strand(self._terminus1_reads[0])
+
+    def get_t2_strand(self):
+        return get_read_strand(self._terminus2_reads[0])
 
     def get_t2_mapqual(self):
         return max(list(map(lambda read: read.mapq, self._terminus2_reads)))
@@ -588,7 +841,7 @@ class GenomicEvent:
         chrom = chrom_int2str(reads_chrom)
         return (chrom, start, end, reads_strand)
 
-    def test_soft_clipping(self, fasta_filename):
+    def check_soft_clipping(self, fasta_filename):
         '''Look at the soft-clipping for reads in terminus 1, and see if they match the
     	position of reads in terminus 2. Then, do the reverse. Record the result'''
 
@@ -597,11 +850,11 @@ class GenomicEvent:
         terminus1_span = self.get_terminus1_span(extension_length=100)
         terminus2_span = self.get_terminus2_span(extension_length=100)
 
-        self._matched_softclips_t1 = test_matched_soft_clipping(\
+        self._matched_softclips_t1 = check_matched_soft_clipping(\
             terminus1_span[0], terminus1_span[1], terminus1_span[2], \
             self._terminus2_reads, fasta_filename)
 
-        self._matched_softclips_t2 = test_matched_soft_clipping(\
+        self._matched_softclips_t2 = check_matched_soft_clipping(\
             terminus2_span[0], terminus2_span[1], terminus2_span[2], \
             self._terminus1_reads, fasta_filename)
 
@@ -615,21 +868,31 @@ class GenomicEvent:
         t1_chrom = self._terminus1_reads[0].rname
         t1_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus1_reads))))
         t1_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus1_reads))))
+        t1_strand = self.get_t1_strand()
 
         t2_chrom = self._terminus2_reads[0].rname
         t2_first_read_start = min(list(map(lambda read: read.pos, list(self._terminus2_reads))))
         t2_last_read_end = max(list(map(lambda read: read.pos+read.qlen, list(self._terminus2_reads))))
+        t2_strand = self.get_t2_strand()
 
         # Temporary code for printing genomic events in gff format...
-        t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
+        t1_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t%s\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
           (chrom_int2str(t1_chrom), t1_first_read_start, t1_last_read_end, self.get_t1_depth(),
-           self.get_event_name(), self.get_event_name())
+           t1_strand, self.get_event_name(), self.get_event_name())
 
-        t2_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t.\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
+        t2_gtf = "%s\tSV_event\texon\t%d\t%d\t%d\t%s\t.\tgene_id \"%s\"; transcript_id \"%s\";\n" % \
           (chrom_int2str(t2_chrom), t2_first_read_start, t2_last_read_end, self.get_t2_depth(),
-           self.get_event_name(), self.get_event_name())
+           t2_strand, self.get_event_name(), self.get_event_name())
 
         return t1_gtf + t2_gtf + self.get_softclip_gtf()
+
+    def get_read_mapqs(self):
+        """
+        :return: A list of the mapping quality values of the reads in this event, in no particular
+        order.
+        """
+
+        return [read.mapping_quality for read in self._terminus1_reads + self._terminus2_reads]
 
     # Hack: Generate an event-name based on the coordinates:
     def get_event_name(self):
@@ -675,7 +938,7 @@ def define_events(clusters, read2cluster, read2mate):
 
     events = set()
 
-    for cluster in clusters:
+    for cluster in tqdm(clusters):
         for paired_cluster in cluster.get_paired_clusters():
             curr_cluster1_reads = list(filter(lambda read: read2cluster[read2mate[read]] == paired_cluster,
                                          cluster.get_reads()))
@@ -697,22 +960,68 @@ def define_events(clusters, read2cluster, read2mate):
     return events
 
 
-def call_events(filtered_reads, fasta_filename):
+def fraction_maqs_over_zero(genomic_event):
+    """
+    Returns the maximum observed mapping quality value from amongst all this genomic event's reads.
+    :param genomic_event: A GenomicEvent object
+    :return: Integer value indicating the maximum observed mapping quality
+    """
+
+    mapqs = genomic_event.get_read_mapqs()
+    fraction_non_zero = sum([mapq_val > 0 for mapq_val in mapqs])/len(mapqs)
+
+    return fraction_non_zero
+
+
+def call_events(filtered_reads, fasta_filename, filter_event_overlap):
     '''Call events on the input reads. The reads must be sorted by chromosome
     and then by position.'''
 
     # Detect overlapping read clusters...
+    logging.info("Detecting clusters...")
     clusters = detect_clusters(filtered_reads)
 
     # Pair up the clusters:
+    logging.info("Pairing clusters...")
     (read2cluster, read2mate) = pair_clusters(clusters)
 
     # Define the events, using those pairings:
+    logging.info("Defining putative events...")
     putative_events = define_events(clusters, read2cluster, read2mate)
 
+    # Note: Now running these filtering steps earlier in order to shorten the expensive
+    # soft-clipping check that follows.
+
+    # Filter putative events on maximum quality of terminus reads:
+    logging.info("Filtering on max quality of terminus reads...")
+    filtered_putative_events = list(filter(lambda event: (event.get_t1_mapqual() >= 19 and event.get_t2_mapqual() >= 19),
+                                           putative_events))
+
+    # Filter on discordant read support depth:
+    logging.info("Filtering on discordant read support depth...")
+    filtered_putative_events = \
+        list(filter(lambda event: (len(event._terminus1_reads) >= 3 and len(event._terminus2_reads) >= 3),
+                    filtered_putative_events))
+
+    logging.info("Filtering on terminus read spacing...")
+    filtered_putative_events = list(filter(lambda event: event_termini_spaced_broadly(event),
+                                           filtered_putative_events))
+
+    if filter_event_overlap:
+        # Filter on event terminus sharing (exclude any events that have
+        # overlapping termini):
+        logging.info("Filtering on terminus event sharing...")
+        filtered_putative_events = filter_on_shared_termini(filtered_putative_events)
+
+    # Do an initial filter to exclude events where > 1% of reads must have a non-zero mapq value.
+    # This is done here as it can greatly reduce an otherwise extreme time burden from
+    # checking all of the events' soft-clipping information:
+    #putative_events = [event for event in putative_events if fraction_maqs_over_zero(event) > mapq_zero_thresh]
+
     # Mark each putative event with soft-clipping information of the reads contained in it:
-    for event in putative_events:
-        event.test_soft_clipping(fasta_filename)
+    logging.info("Checking soft-clipping for all putative events...")
+    for event in tqdm(filtered_putative_events):
+        event.check_soft_clipping(fasta_filename)
 
     return putative_events
 
@@ -885,7 +1194,7 @@ def detect_clusters_single_strand(clusters, reads, prev_read_extn=0):
     prev_read_end_pos = 0
     curr_cluster = None
 
-    for read in reads:
+    for read in tqdm(reads):
         # Detect if the read is on a different chromosome, or if it does not
         # overlap the previous read
         if read.rname != prev_read_chrom or \
