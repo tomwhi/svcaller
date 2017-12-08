@@ -13,7 +13,8 @@ setup(name='svcaller',
       install_requires=reqs,
       entry_points={
           'console_scripts': [
-              'svcaller = svcaller.cli.base:base'
+              'svcaller = svcaller.cli.base:base',
+              'sveffect = svcaller.cli.base:sveffect',
           ]
       }
       )
